@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.4
 import copy
 import os, re, sys
 from argparse import ArgumentParser
-from collections import defaultdict, Iterator
+from collections import defaultdict, Iterator, OrderedDict
 import importlib
 
 # -------------------------------------------
@@ -13,6 +13,8 @@ from functools import partial
 import pickle
 
 import itertools
+
+import time
 
 from config import *
 
@@ -27,6 +29,10 @@ from odinclean import merge_strings, clean_corpus
 from xigt.importers.odin import make_igt
 from xigt.model import XigtCorpus
 from xigt import xigtpath
+import logging
+NORM_LEVEL = 1000
+logging.addLevelName(NORM_LEVEL, 'norm')
+LOG = logging.getLogger()
 # -------------------------------------------
 
 
@@ -53,7 +59,7 @@ class FrekiFile(Iterator):
             if data.startswith('doc_id'):
                 block = data.split()[1].split('=')[1]
             elif data.strip():
-                line, text = re.search('^line=([0-9]+):(.*$)', data).groups()
+                line, text = re.search('^line=([0-9]+).*?:(.*$)', data).groups()
                 self.linedict[int(line)] = TextLine(text, int(line))
                 self.blocks[int(line)] = block
                 return TextLine(text, int(line))
@@ -281,7 +287,7 @@ class Configurator(Iterator):
 # -------------------------------------------
 # Now, iterate over the pairs.
 # -------------------------------------------
-def renum_checks(check_instances, ff : FrekiFile, match_dict = None, match_f=sys.stdout):
+def renum_checks(check_instances, ff : FrekiFile, filenum : int, match_dict = None, match_f=sys.stdout):
 
     # -------------------------------------------
     # Convert to ODIN Blocks
@@ -316,7 +322,11 @@ def renum_checks(check_instances, ff : FrekiFile, match_dict = None, match_f=sys
 
     # We will keep a dictionary that indexes by [igt#][freki-line][odin-line(s)] = lev. dist
     # then, we will seek to find the optimal mapping.
-    if False:
+
+    picklepath = '{}.pickle'.format(filenum)
+    if not os.path.exists(picklepath):
+
+        LOG.log(NORM_LEVEL, "Building levenshtein edit dict for individual lines...")
         igtlinemap = defaultdict(partial(defaultdict, partial(defaultdict, partial(int, 'inf'))))
 
 
@@ -333,68 +343,80 @@ def renum_checks(check_instances, ff : FrekiFile, match_dict = None, match_f=sys
                     clean_text = re.sub('\s', '', clean_text)
                     igtlinemap[igt_index][freki_line.lineno][odin_lines] = levenshtein(freki_text, clean_text)
 
-        with open('test.pickle', 'wb') as f:
-            pickle.dump(igtlinemap, f)
-        sys.exit()
+        LOG.log(NORM_LEVEL, "Dictionary building completed...")
+
+        # Once we've computed the lev. distance for each pair of lines, now let's
+        # do a search for the best fit, with the constraint that the blocks must
+        # occur in the same order as the odin lines do.
+
+        # First, let's calculate [odin_span][freki_spans]
+        spanmaps = defaultdict(dict)
+
+        for igt_index in igtlinemap.keys():
+
+            for freki_lineno in sorted(igtlinemap[igt_index].keys()):
+                chunk_total = 0
+
+                odin_line_tups = tuple(sorted(igtlinemap[igt_index][freki_lineno]))
+                freki_tup = tuple(freki_lineno+i for i in range(len(odin_line_tups)))
+                # freki_tup = (freki_lineno, freki_lineno + len(odin_line_tups)-1)
+
+                for i, odin_line_tup in enumerate(odin_line_tups):
+                    chunk_total += igtlinemap[igt_index].get(freki_lineno+i, defaultdict(lambda x: float('inf'))).get(odin_line_tup, float('inf'))
+
+
+                spanmaps[odin_line_tups][freki_tup] = chunk_total
+
+        with open(picklepath, 'wb') as f:
+            pickle.dump(spanmaps, f)
 
     else:
-        with open('test.pickle', 'rb') as f:
-            igtlinemap = pickle.load(f)
-
-    # Once we've computed the lev. distance for each pair of lines, now let's
-    # do a search for the best fit, with the constraint that the blocks must
-    # occur in the same order as the odin lines do.
-
-
-    # First, let's calculate [odin_span][freki_spans]
-    spanmaps = defaultdict(dict)
-
-    for igt_index in igtlinemap.keys():
-
-        for freki_lineno in sorted(igtlinemap[igt_index].keys()):
-            chunk_total = 0
-
-            odin_line_tups = tuple(sorted(igtlinemap[igt_index][freki_lineno]))
-            freki_tup = (freki_lineno, freki_lineno + len(odin_line_tups))
-
-            for i, odin_line_tup in enumerate(odin_line_tups):
-                chunk_total += igtlinemap[igt_index].get(freki_lineno+i, defaultdict(lambda x: float('inf'))).get(odin_line_tup, float('inf'))
-
-
-            spanmaps[odin_line_tups][freki_tup] = chunk_total
-
+        with open(picklepath, 'rb') as f:
+            spanmaps = pickle.load(f)
 
     # Now, let's search for the optimal non-overlapping configuration.
+    odin_spans = sorted(spanmaps.keys())
 
-    # c = Configurator(sorted(spanmaps.keys()), len(ff))
+    is_inconsistent = True
 
-
-
-    c = Configurator([(0,1,2),(5,6,7),(9,10,11),(12,13,14)], 16)
-    for config in c:
-        print(config)
-
-
-    sys.exit()
+    best_spans = OrderedDict()
 
 
 
+    cur_score = 0
+    last_freki_stop = 0
+    for odin_span in odin_spans:
+        best_freki_span, score = sorted(spanmaps[odin_span].items(), key=lambda x: x[1]).pop(0)
 
-        #
-        # # Find the mapping between line numbers from the original
-        # # annotation to the new, freki numbers.
-        # orig_lines, freki_lines = find_most_similar(linemap)
-        #
-        #
-        # # match_f.write('igt_id={}\n'.format(igt.id))
-        # for i, orig_line in enumerate(orig_lines):
-        #     orig_indices = ','.join(orig_line.split())
-        #     frek_index   = freki_lines[i]
-        #
-        #     orig_item = xigtpath.find(clean_tier, '//item[@line="{}"]'.format(orig_line))
-        #
-        #     match_f.write('{1}:{0}\n'.format(orig_item.attributes['tag'], frek_index))
-        # # match_f.write('\n')
+        # If this span starts occurs before the last one, we
+        # have an inconsistency.
+        avg_dist = score / len(odin_span)
+        if best_freki_span[0] <= last_freki_stop:
+            print('inconsistent! {} {} {}'.format(odin_span, best_freki_span, avg_dist))
+        else:
+            print(avg_dist)
+
+        # If the score is too high, just don't map it.
+        if avg_dist < 20:
+            best_spans[odin_span] = best_freki_span
+            cur_score += score
+
+
+    # Find the mapping between line numbers from the original
+    # annotation to the new, freki numbers.
+    for odin_span in best_spans.keys():
+        freki_span = best_spans[odin_span]
+        # match_f.write('igt_id={}\n'.format(igt.id))
+        for i, orig_line in enumerate(odin_span):
+            orig_indices = ','.join([str(i) for i in orig_line])
+            frek_index   = freki_span[i]
+
+            orig_item = xigtpath.find(xc, '//item[@line="{}"]'.format(orig_indices))
+            # orig_item = xigtpath.find(xc, '//item')
+
+
+            match_f.write('{1}:{0}\n'.format(orig_item.attributes['tag'], frek_index))
+    # match_f.write('\n')
 
 
 class TextLine(str):
@@ -420,13 +442,12 @@ if __name__ == '__main__':
     freki_path = os.path.join(FREKI_DIR, '{}.txt'.format(filenum))
     ff = FrekiFile(freki_path)
 
-
-    check_data = open(checkfiles[filenum], 'r', encoding='latin-1').readlines()
+    check_data = open(args.checkfile, 'r', encoding='latin-1').readlines()
 
     with open(os.path.join(MATCH_DIR, str(filenum)+'.matches'), 'w', encoding='utf-8') as f:
 
         check_instances = gather_check_instances(check_data)
 
         match_dict = {'matches':0, 'compares':0}
-        renum_checks(check_instances, ff, match_dict=match_dict, match_f=f)
+        renum_checks(check_instances, ff, filenum, match_dict=match_dict, match_f=f)
 

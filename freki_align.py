@@ -220,6 +220,7 @@ class Configurator(Iterator):
 
         self.maximums = []
         self.minimums = []
+
         # Iterate backwards through the spans...
         for span in sorted(odin_spans, reverse=True):
             if not self.maximums:
@@ -232,8 +233,8 @@ class Configurator(Iterator):
             self.maximums.insert(0, next_max)
             self.minimums.append(next_min)
 
-        self.offsets = copy.copy(self.minimums)
-        self.offsets[-1] -= 1
+        self.offsets = [0 for i in self.minimums]
+        self.offsets[-1] -=1
 
 
 
@@ -245,15 +246,22 @@ class Configurator(Iterator):
         i = len(self.offsets)-1
 
         while i >= 0:
-            if self.offsets[i] < self.maximums[i]:
+            # print('OFFSETS: {}'.format(self.offsets))
+            if self.offsets[i]+self.minimums[i] < self.maximums[i]:
                 self.offsets[i] += 1
                 break
-            elif self.offsets[i] >= self.maximums[i]:
-                # Increment this 'minimum', if we still can.
-                if self.minimums[i] < self.maximums[i]:
-                    self.minimums[i] += 1
-                # reset this offset to that min.
-                self.offsets[i] = self.minimums[i]
+
+            # If we've overflowed a column... we want to reset it and
+            # the ones that follow it
+            elif self.offsets[i]+self.minimums[i] >= self.maximums[i]:
+
+                # Each time we overflow, we want the new
+                # offsets to start a little higher to account
+                # for the other spans that have moved a little
+                respace_value = self.offsets[i-1]+1
+                for j in range(i, len(self.offsets)):
+                    self.offsets[j] = respace_value
+
                 # Now, set the i to the next position to the left
                 # and see if we need to repeat
                 i -= 1
@@ -263,7 +271,8 @@ class Configurator(Iterator):
         if i < 0:
             raise StopIteration
         else:
-            return self.offsets
+            return [i+j for i, j in zip(self.offsets, self.minimums)]
+
 
 
 
@@ -361,7 +370,7 @@ def renum_checks(check_instances, ff : FrekiFile, match_dict = None, match_f=sys
 
 
 
-    c = Configurator([(0,1,2),(5,6,7),(9,10,11)], 13)
+    c = Configurator([(0,1,2),(5,6,7),(9,10,11),(12,13,14)], 16)
     for config in c:
         print(config)
 

@@ -15,6 +15,9 @@ import pickle
 import itertools
 
 import time
+from multiprocessing.pool import Pool
+
+from multiprocessing import Lock
 
 from config import *
 
@@ -35,14 +38,72 @@ logging.addLevelName(NORM_LEVEL, 'norm')
 LOG = logging.getLogger()
 # -------------------------------------------
 
+class FrekiBlock(object):
+    """
+    File to hold the "blocks"
+    """
+    def __init__(self, id=None, lines=None, bbox=None, page=None, doc_id=None):
+        self.lines = lines if lines else []
+        self.id = id
+        self.bbox = bbox
+        self.page = page
+        self.doc_id = doc_id
+
+    def __getitem__(self, item):
+        return self.lines[item]
+
+    def append(self, item):
+        self.lines.append(item)
+
+    def label_line(self, lineno, label):
+        for i, line in enumerate(self.lines):
+            if line.lineno == lineno:
+                self.lines[i] = TextLine(line, lineno=line.lineno, fonts=line.fonts, label=label)
+                break
+
+    def _max_preamble_width(self):
+        return max([len(self._line_preamble(l)) for l in self.lines])
+
+    def _max_tag_width(self):
+        try:
+            return max([len(l.label) for l in self.lines if l.label is not None])
+        except:
+            return 1
+
+    def _line_preamble(self, line):
+        preamble = 'line={} '.format(line.lineno)
+        mtw = self._max_tag_width()
+        tag = 'O'
+        if line.label:
+            tag = line.label
+        preamble += ' tag={{:{}}}'.format(mtw).format(tag)
+        preamble += ' fonts={}'.format(line.fonts)
+        return preamble
+
+    def __repr__(self):
+        first_line = self.lines[0].lineno if self.lines else 0
+        last_line  = self.lines[-1].lineno if self.lines else 0
+
+        ret_str = 'doc_id={} page={} block_id={} bbox={} {} {}\n'.format(self.doc_id, self.page, self.id, self.bbox, first_line, last_line)
+        pre_width = self._max_preamble_width()
+        ret_format = '{{:{}}}:{{}}\n'.format(pre_width)
+        for line in self.lines:
+            ret_str += ret_format.format(self._line_preamble(line), line)
+        return ret_str
+
 
 class FrekiFile(Iterator):
     def __init__(self, path):
         self.linedict = {}
-        self.blocks = {}
+        self.block_ids = {}
+        self.block_dict = {}
         self.fh = open(path, 'r', encoding='utf-8')
 
+        self.cur_block = None
+
         self._load()
+        super().__init__()
+
 
     def _load(self):
         for line in self:
@@ -54,17 +115,22 @@ class FrekiFile(Iterator):
 
     def __next__(self):
         data = self.fh.__next__()
-        block = None
         while data:
             if data.startswith('doc_id'):
-                block = data.split()[1].split('=')[1]
+                blockdata = data.split()
+                doc_id, page, block_id, bbox = [x.split('=')[1] for x in blockdata[:4]]
+                self.cur_block = FrekiBlock(id=block_id, bbox=bbox, page=page, doc_id=doc_id)
+                self.block_dict[block_id] = self.cur_block
             elif data.strip():
-                line, text = re.search('^line=([0-9]+).*?:(.*$)', data).groups()
+                line, fonts, text = re.search('^line=([0-9]+).*?fonts=(.*?):(.*$)', data).groups()
                 self.linedict[int(line)] = TextLine(text, int(line))
-                self.blocks[int(line)] = block
-                return TextLine(text, int(line))
+                self.block_ids[int(line)] = self.cur_block.id
+                tl = TextLine(text, int(line), fonts=fonts)
+                self.cur_block.append(tl)
+                return TextLine(text, int(line), fonts=fonts)
 
             data = self.fh.__next__()
+
 
 # -------------------------------------------
 # Levenshtein Distance
@@ -110,10 +176,6 @@ def print_pairs(check_block, freki_block, out_f):
 
 # -------------------------------------------
 
-checkfiles = {}
-frekifiles = {}
-rawfiles   = {}
-
 def gather_check_instances(data):
     instances = []
 
@@ -131,67 +193,6 @@ def gather_check_instances(data):
     return instances
 
 
-# -------------------------------------------
-# Find the rawfiles
-# -------------------------------------------
-for root, dir, files in os.walk(OLD_TXT):
-    for file in files:
-        fullpath = os.path.join(root, file)
-        basename = os.path.basename(fullpath)
-        if re.search('^[0-9]+\.txt', basename):
-            filenum = int(os.path.splitext(basename)[0])
-            rawfiles[filenum] = fullpath
-
-
-# -------------------------------------------
-# Find all the checkfiles.
-# -------------------------------------------
-for root, dir, files in os.walk(CHECK_DIR):
-    for file in files:
-        fullpath = os.path.join(root, file)
-        if fullpath.endswith('.check'):
-            filenum = int(os.path.basename(os.path.splitext(fullpath)[0]))
-            checkfiles[filenum] = fullpath
-
-# -------------------------------------------
-# Now, find all the new FREKI files that match.
-# -------------------------------------------
-for f in os.listdir(FREKI_DIR):
-    filenum = int(os.path.splitext(f)[0])
-    frekifiles[filenum] = os.path.join(FREKI_DIR, f)
-
-# =============================================================================
-# REMAPPING
-# =============================================================================
-
-class FrekiBlock(object):
-    def __init__(self, str):
-        lines = str.split('\n')
-        header_info   = lines[0].split()
-        self.doc_id   = header_info[0].split('=')[1]
-        self.block_id = header_info[1].split('=')[1]
-        self.bbox     = header_info[2].split('=')[1]
-        self.line_range = tuple(int(i) for i in header_info[3:])
-        self.labels = {}
-
-        self.lines={}
-        for line in lines[1:]:
-            if not line.strip():
-                continue
-            lineno, linetxt = re.search('line=([0-9]+):(.*)', line).groups()
-            self.lines[int(lineno)] = linetxt
-
-    def textlines(self):
-        return [self.lines[i] for i in sorted(self.lines.keys())]
-
-    def full_line_range(self):
-        return tuple(i for i in sorted(self.lines.keys()))
-
-    def __str__(self):
-        ret_str = ''
-        for line in sorted(self.lines.keys()):
-            ret_str += 'line={}:{}\n'.format(line, self.lines[line])
-        return ret_str
 
 def find_most_similar(d):
     """
@@ -279,10 +280,9 @@ class Configurator(Iterator):
         else:
             return [i+j for i, j in zip(self.offsets, self.minimums)]
 
-
-
-
-
+def lev_for_line(igt_index, lineno, odin_lines, freki_text, clean_text):
+    lev = levenshtein(freki_text, clean_text)
+    return (igt_index, lineno, odin_lines, lev)
 
 # -------------------------------------------
 # Now, iterate over the pairs.
@@ -297,16 +297,17 @@ def renum_checks(check_instances, ff : FrekiFile, filenum : int, match_dict = No
         for lineno in check_instance.split('\n'):
             odin_lines.append(lineno)
 
+
     # -------------------------------------------
     # Convert the blocks to IGT instances...
     # -------------------------------------------
     xc = XigtCorpus()
     blocks = odin_blocks(odin_lines)
+
     for odin_block in blocks:
         igt = make_igt(odin_block, {'keep_headers':True, 'replacement_char':'\uFFFD'})
         igt.id = 'i'+re.sub('\s', '-', odin_block['line_range'])
         xc.append(igt)
-
 
 
 
@@ -322,7 +323,8 @@ def renum_checks(check_instances, ff : FrekiFile, filenum : int, match_dict = No
 
     # We will keep a dictionary that indexes by [igt#][freki-line][odin-line(s)] = lev. dist
     # then, we will seek to find the optimal mapping.
-
+    p = Pool()
+    l = Lock()
     picklepath = '{}.pickle'.format(filenum)
     if not os.path.exists(picklepath):
 
@@ -338,11 +340,24 @@ def renum_checks(check_instances, ff : FrekiFile, filenum : int, match_dict = No
                 clean_text = clean_item.value()
                 for freki_lineno, freki_line in sorted(ff.linedict.items(), key=lambda x: x[0]):
 
+                    def callback(result):
+                        l.acquire()
+                        igt_index, lineno, odin_lines, lev = result
+                        igtlinemap[igt_index][lineno][odin_lines] = lev
+                        l.release()
+
+
+
+
                     # Remove the whitespace and compare the lines
                     freki_text  = re.sub('\s','', freki_line)
                     clean_text = re.sub('\s', '', clean_text)
-                    igtlinemap[igt_index][freki_line.lineno][odin_lines] = levenshtein(freki_text, clean_text)
+                    p.apply_async(lev_for_line, args=[igt_index, freki_line.lineno, odin_lines, freki_text, clean_text], callback=callback)
+                    # p.apply(lev_for_line, args=[igt_index, freki_line.lineno, odin_lines, freki_text, clean_text])
+                    # igtlinemap[igt_index][freki_line.lineno][odin_lines] = levenshtein(freki_text, clean_text)
 
+        p.close()
+        p.join()
         LOG.log(NORM_LEVEL, "Dictionary building completed...")
 
         # Once we've computed the lev. distance for each pair of lines, now let's
@@ -359,7 +374,9 @@ def renum_checks(check_instances, ff : FrekiFile, filenum : int, match_dict = No
 
                 odin_line_tups = tuple(sorted(igtlinemap[igt_index][freki_lineno]))
                 freki_tup = tuple(freki_lineno+i for i in range(len(odin_line_tups)))
-                # freki_tup = (freki_lineno, freki_lineno + len(odin_line_tups)-1)
+
+                if [num for num in freki_tup if num > max(igtlinemap[igt_index].keys())]:
+                    continue
 
                 for i, odin_line_tup in enumerate(odin_line_tups):
                     chunk_total += igtlinemap[igt_index].get(freki_lineno+i, defaultdict(lambda x: float('inf'))).get(odin_line_tup, float('inf'))
@@ -367,8 +384,8 @@ def renum_checks(check_instances, ff : FrekiFile, filenum : int, match_dict = No
 
                 spanmaps[odin_line_tups][freki_tup] = chunk_total
 
-        with open(picklepath, 'wb') as f:
-            pickle.dump(spanmaps, f)
+        # with open(picklepath, 'wb') as f:
+        #     pickle.dump(spanmaps, f)
 
     else:
         with open(picklepath, 'rb') as f:
@@ -382,6 +399,7 @@ def renum_checks(check_instances, ff : FrekiFile, filenum : int, match_dict = No
     best_spans = OrderedDict()
 
 
+    noisy_spans = OrderedDict()
 
     cur_score = 0
     last_freki_stop = 0
@@ -391,40 +409,65 @@ def renum_checks(check_instances, ff : FrekiFile, filenum : int, match_dict = No
         # If this span starts occurs before the last one, we
         # have an inconsistency.
         avg_dist = score / len(odin_span)
-        if best_freki_span[0] <= last_freki_stop:
-            print('inconsistent! {} {} {}'.format(odin_span, best_freki_span, avg_dist))
-        else:
-            print(avg_dist)
-
-        # If the score is too high, just don't map it.
-        if avg_dist < 20:
-            best_spans[odin_span] = best_freki_span
-            cur_score += score
+        # if best_freki_span[0] <= last_freki_stop:
+        #     print('inconsistent! {} {} {}'.format(odin_span, best_freki_span, avg_dist))
+        # else:
+        #     print(avg_dist)
 
 
+
+        best_spans[odin_span] = best_freki_span
+        cur_score += score
+
+        # If the score is too high, make a note of it
+        if avg_dist > 20:
+            noisy_spans[odin_span] = avg_dist
+
+    blocks = OrderedDict()
     # Find the mapping between line numbers from the original
     # annotation to the new, freki numbers.
-    for odin_span in best_spans.keys():
-        freki_span = best_spans[odin_span]
-        # match_f.write('igt_id={}\n'.format(igt.id))
-        for i, orig_line in enumerate(odin_span):
-            orig_indices = ','.join([str(i) for i in orig_line])
-            frek_index   = freki_span[i]
+    for odin_span in odin_spans:
 
-            orig_item = xigtpath.find(xc, '//item[@line="{}"]'.format(orig_indices))
+        freki_span = best_spans[odin_span]
+
+
+        # match_f.write('igt_id={}\n'.format(igt.id))
+        for i, odin_linenum in enumerate(odin_span):
+            orig_indices = ' '.join([str(i) for i in odin_linenum])
+            frek_index   = freki_span[i]
+            orig_item = xigtpath.find(xc, '//tier[@state="cleaned"]/item[@line="{}"]'.format(orig_indices))
+            label = orig_item.attributes['tag']
             # orig_item = xigtpath.find(xc, '//item')
 
 
-            match_f.write('{1}:{0}\n'.format(orig_item.attributes['tag'], frek_index))
+
+            noise = noisy_spans.get(odin_span, 0.)
+            if noise > 20:
+                label = '*'+label
+            elif noise > 50:
+                label = '**'+label
+            elif noise > 100:
+                label = '***'+label
+
+            freki_block = ff.block_dict[ff.block_ids[frek_index]]
+            freki_block.label_line(frek_index, label)
+            blocks[freki_block.id] = freki_block
+
+
+            # match_f.write('{1}:{0}\n'.format(label, frek_index))
+    for block in blocks.values():
+        match_f.write(str(block)+'\n')
     # match_f.write('\n')
 
 
 class TextLine(str):
-    def __new__(cls, seq=None, lineno=None):
+    def __new__(cls, seq=None, lineno=None, fonts=None, label=None):
         if seq is None:
             seq = ''
         tl = str.__new__(cls, seq)
         tl.lineno = lineno
+        tl.fonts = fonts
+        tl.label = label
         return tl
 
 
@@ -446,8 +489,6 @@ if __name__ == '__main__':
 
     with open(os.path.join(MATCH_DIR, str(filenum)+'.matches'), 'w', encoding='utf-8') as f:
 
-        check_instances = gather_check_instances(check_data)
-
         match_dict = {'matches':0, 'compares':0}
-        renum_checks(check_instances, ff, filenum, match_dict=match_dict, match_f=f)
+        renum_checks(gather_check_instances(check_data), ff, filenum, match_dict=match_dict, match_f=f)
 

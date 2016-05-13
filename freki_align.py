@@ -62,7 +62,10 @@ class FrekiBlock(object):
                 break
 
     def _max_preamble_width(self):
-        return max([len(self._line_preamble(l)) for l in self.lines])
+        try:
+            return max([len(self._line_preamble(l)) for l in self.lines])
+        except ValueError:
+            return 0
 
     def _max_tag_width(self):
         try:
@@ -454,11 +457,19 @@ def renum_checks(check_instances, ff : FrekiFile, filenum : int, match_dict = No
             blocks[freki_block.id] = freki_block
 
 
+
             # match_f.write('{1}:{0}\n'.format(label, frek_index))
-    for block in blocks.values():
+    all_blocks = sorted(ff.block_dict.values(), key=block_id_parse)
+    labeled_blocks = blocks.values()
+
+    for block in all_blocks:
         match_f.write(str(block)+'\n')
     # match_f.write('\n')
 
+
+def block_id_parse(block):
+    x, y = block.id.split('-')
+    return (int(x), int(y))
 
 class TextLine(str):
     def __new__(cls, seq=None, lineno=None, fonts=None, label=None):
@@ -487,7 +498,7 @@ if __name__ == '__main__':
 
     check_data = open(args.checkfile, 'r', encoding='latin-1').readlines()
 
-    with open(os.path.join(MATCH_DIR, str(filenum)+'.matches'), 'w', encoding='utf-8') as f:
+    with open(os.path.join(MATCH_DIR, str(filenum)+'.txt'), 'w', encoding='utf-8') as f:
 
         match_dict = {'matches':0, 'compares':0}
         renum_checks(gather_check_instances(check_data), ff, filenum, match_dict=match_dict, match_f=f)

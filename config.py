@@ -25,6 +25,18 @@ MALLET_DIR = '/Users/rgeorgi/Documents/code/mallet-2.0.7'
 # -------------------------------------------
 # Regular Expressions
 # -------------------------------------------
+
+# These grams will be searched for case-insensitive.
+GRAM_LIST = ['1SG', '1PL', '1SM',
+             '2SG', '2P', '2SM',
+             '3SG', '3REFL', '3SGP', '3SM', '3P']
+
+# These grams will be searched for case sensitive.
+CASED_GRAM_LIST = ['POSS',
+                   'ACC','NOM', 'DAT', 'ERG', 'AOR', 'ABS', 'OBL', 'DUAL', 'REFL',
+                   'NEG', 'TOP',
+                   'FUT', 'PROG', 'PRES', 'PASS']
+
 REGEXES = '''
 \s*(\()\d*\).*\n
 \s*.*\n

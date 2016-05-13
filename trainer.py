@@ -330,9 +330,9 @@ def get_textfeats(line: Line, lm : NgramDict) -> dict:
     # if lm is not None:
     #     feats['looks_english'] = looks_english(line, lm)
 
-    # for word in split_words(line):
-    #     if word:
-    #         feats['word_{}'.format(word)] = 1
+    for word in split_words(line):
+        if word:
+            feats['word_{}'.format(word)] = 1
     return feats
 
 def add_frekifeats(r: DocReader):
@@ -811,16 +811,20 @@ class SpanCounter(object):
 
     def partial_matches(self):
         matches = 0
+        gold_spans = self.gold_spans.copy()
+
         for system_span in self.guess_spans:
             sys_start, sys_stop = system_span[0], system_span[-1]
-            for gold_span in self.gold_spans:
+            for gold_span in gold_spans:
                 gold_start, gold_stop = gold_span[0], gold_span[-1]
                 # Now see if the spans overlap
                 if gold_stop >= sys_start >= gold_start:
                     matches += 1
+                    gold_spans.remove(gold_span)
                     break
                 elif gold_stop >= sys_stop >= gold_start:
                     matches += 1
+                    gold_spans.remove(gold_span)
                     break
         return matches
 

@@ -38,6 +38,18 @@ logging.addLevelName(NORM_LEVEL, 'norm')
 LOG = logging.getLogger()
 # -------------------------------------------
 
+class TextLine(str):
+    def __new__(cls, seq=None, lineno=None, fonts=None, label=None, span_id=None):
+        if seq is None:
+            seq = ''
+        tl = str.__new__(cls, seq)
+        tl.lineno = lineno
+        tl.fonts = fonts
+        tl.label = label
+        tl.span_id = span_id
+        return tl
+
+
 class FrekiBlock(object):
     """
     File to hold the "blocks"
@@ -52,13 +64,24 @@ class FrekiBlock(object):
     def __getitem__(self, item):
         return self.lines[item]
 
+    def get_lineno(self, lineno):
+        for line in self.lines:
+            if line.lineno == lineno:
+                return line
+
     def append(self, item):
         self.lines.append(item)
 
     def label_line(self, lineno, label):
         for i, line in enumerate(self.lines):
             if line.lineno == lineno:
-                self.lines[i] = TextLine(line, lineno=line.lineno, fonts=line.fonts, label=label)
+                self.lines[i] = TextLine(line, lineno=line.lineno, fonts=line.fonts, label=label, span_id=line.span_id)
+                break
+
+    def set_span_id(self, lineno, span_id):
+        for i, line in enumerate(self.lines):
+            if line.lineno == lineno:
+                self.lines[i] = TextLine(line, lineno=line.lineno, fonts=line.fonts, label=line.label, span_id=span_id)
                 break
 
     def _max_preamble_width(self):
@@ -73,13 +96,16 @@ class FrekiBlock(object):
         except:
             return 1
 
-    def _line_preamble(self, line):
+    def _line_preamble(self, line: TextLine):
         preamble = 'line={} '.format(line.lineno)
         mtw = self._max_tag_width()
         tag = 'O'
         if line.label:
             tag = line.label
         preamble += ' tag={{:{}}}'.format(mtw).format(tag)
+        if line.span_id:
+            preamble += ' span_id={}'.format(line.span_id)
+
         preamble += ' fonts={}'.format(line.fonts)
         return preamble
 
@@ -96,7 +122,9 @@ class FrekiBlock(object):
 
 
 class FrekiFile(Iterator):
+
     def __init__(self, path):
+        super().__init__()
         self.linedict = {}
         self.block_ids = {}
         self.block_dict = {}
@@ -105,7 +133,7 @@ class FrekiFile(Iterator):
         self.cur_block = None
 
         self._load()
-        super().__init__()
+
 
 
     def _load(self):
@@ -429,7 +457,8 @@ def renum_checks(check_instances, ff : FrekiFile, filenum : int, match_dict = No
     blocks = OrderedDict()
     # Find the mapping between line numbers from the original
     # annotation to the new, freki numbers.
-    for odin_span in odin_spans:
+    for i, odin_span in enumerate(odin_spans):
+        span_id = 's{}'.format(i)
 
         freki_span = best_spans[odin_span]
 
@@ -453,8 +482,23 @@ def renum_checks(check_instances, ff : FrekiFile, filenum : int, match_dict = No
                 label = '***'+label
 
             freki_block = ff.block_dict[ff.block_ids[frek_index]]
+            assert isinstance(freki_block, FrekiBlock)
+
+            # Add the B/I label, depending on whether the previous
+            # line was in the same span or not.
+            prev_block = ff.block_dict.get(ff.block_ids.get(frek_index-1))
+
+            prev_span_id = prev_block.get_lineno(frek_index-1).span_id if prev_block else None
+
+            if prev_span_id == span_id:
+                label = 'I-{}'.format(label)
+            else:
+                label = 'B-{}'.format(label)
+
             freki_block.label_line(frek_index, label)
+            freki_block.set_span_id(frek_index, span_id)
             blocks[freki_block.id] = freki_block
+
 
 
 
@@ -471,15 +515,6 @@ def block_id_parse(block):
     x, y = block.id.split('-')
     return (int(x), int(y))
 
-class TextLine(str):
-    def __new__(cls, seq=None, lineno=None, fonts=None, label=None):
-        if seq is None:
-            seq = ''
-        tl = str.__new__(cls, seq)
-        tl.lineno = lineno
-        tl.fonts = fonts
-        tl.label = label
-        return tl
 
 
 

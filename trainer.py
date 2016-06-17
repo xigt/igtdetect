@@ -796,37 +796,54 @@ class SpanCounter(object):
         return (self.span_precision(exact), self.span_recall(exact), self.span_fmeasure(exact))
 
     def span_precision(self, exact=True):
-        num = self.exact_matches() if exact else self.partial_matches()
-        den = len(self.guess_spans)
-        return num / den if den > 0 else 0
+        if not exact:
+            return self.partial_precision()
+        else:
+            den = len(self.guess_spans)
+            return self.exact_matches() / den if den > 0 else 0
 
     def span_recall(self, exact=True):
-        num = self.exact_matches() if exact else self.partial_matches()
-        den = len(self.gold_spans)
-        return num / den if den > 0 else 0
+        if not exact:
+            return self.partial_recall()
+        else:
+            den = len(self.gold_spans)
+            return self.exact_matches() / den if den > 0 else 0
 
     def span_fmeasure(self, exact=True):
         return 2*(self.span_precision(exact)*self.span_recall(exact))/(self.span_precision(exact)+self.span_recall(exact))
 
 
-    def partial_matches(self):
+    def partial_recall(self):
+        """
+        The partial span recall is calculated by the number of gold spans for which a match
+        is found. (There could be multiple system spans which overlap with the gold span,
+        we simply care that one of them overlaps).
+        :return:
+        """
         matches = 0
-        gold_spans = self.gold_spans.copy()
+        for gold_start, gold_stop in [(s[0], s[-1]) for s in self.gold_spans]:
+            for sys_start, sys_stop in [(s[0], s[-1]) for s in self.guess_spans]:
+                if (sys_stop >= gold_start >= sys_start) or (sys_stop >= gold_stop >= sys_start):
+                    matches += 1
+                    break
+        return matches / len(self.gold_spans) if self.gold_spans else 0
 
-        for system_span in self.guess_spans:
-            sys_start, sys_stop = system_span[0], system_span[-1]
-            for gold_span in gold_spans:
-                gold_start, gold_stop = gold_span[0], gold_span[-1]
-                # Now see if the spans overlap
-                if gold_stop >= sys_start >= gold_start:
+
+    def partial_precision(self):
+        """
+        The partial span precision is calculated by the number of system spans which do in
+        fact overlap with a gold span.
+        :return:
+        """
+        matches = 0
+
+        for sys_start, sys_stop in [(s[0], s[-1]) for s in self.guess_spans]:
+            for gold_start, gold_stop in [(s[0], s[-1]) for s in self.gold_spans]:
+                if (gold_stop >= sys_start >= gold_start) or (gold_stop >= sys_stop >= gold_start):
                     matches += 1
-                    gold_spans.remove(gold_span)
                     break
-                elif gold_stop >= sys_stop >= gold_start:
-                    matches += 1
-                    gold_spans.remove(gold_span)
-                    break
-        return matches
+
+        return matches / len(self.guess_spans) if self.guess_spans else 0
 
 
     def add_line(self, lineno, gold, guess):

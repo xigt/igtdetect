@@ -337,16 +337,29 @@ def get_textfeats(line: Line, lm : NgramDict) -> dict:
 
 def add_frekifeats(r: DocReader):
 
+
+
     for lineno in sorted(r.featdict.keys()):
-        feats = {
-            'is_indented': isindented(r, lineno)
-            ,'is_first_page': is_first_page(r, lineno)
-            ,'prev_line_same_block': prev_line_same_block(r, lineno)
-            ,'next_line_same_block': next_line_same_block(r, lineno)
-            ,'has_nonstandard_font' : has_nondefault_font(r, lineno)
-            ,'has_smaller_font' : has_smaller_font(r, lineno)
-            ,'has_larger_font' : has_larger_font(r, lineno)
-        }
+
+        feats = {}
+
+        # Use this function to check the
+        # feature constant name against the
+        # list of enabled features, and trigger
+        # the appropriate function if it's enabled.
+        def checkfeat(name, func):
+            nonlocal feats
+            if name in FREKI_FEATS:
+                feats[name] = func(r, lineno)
+
+        # Apply each feature if it is enabled
+        checkfeat(F_IS_INDENTED, isindented)
+        checkfeat(F_IS_FIRST_PAGE, is_first_page)
+        checkfeat(F_PREV_LINE_SAME_BLOCK, prev_line_same_block)
+        checkfeat(F_NEXT_LINE_SAME_BLOCK, next_line_same_block)
+        checkfeat(F_HAS_NONSTANDARD_FONT, has_nondefault_font)
+        checkfeat(F_HAS_SMALLER_FONT, has_smaller_font)
+        checkfeat(F_HAS_LARGER_FONT, has_larger_font)
 
         r.featdict[lineno].update(feats)
 

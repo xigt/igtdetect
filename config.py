@@ -1,13 +1,17 @@
+# =============================================================================
+# Configuration file for IGT Detection.
+#
+# The following file contains a number of settings to configure the IGT
+# detection script's environment. Some directories are contained below,
+# and switching features on and off can be done near the end of the
+# document.
+# =============================================================================
+
 # -------------------------------------------
-# Various Directories for where Files are Stored.
+# Where to find and place files.
 # -------------------------------------------
 MATCH_DIR = '/Users/rgeorgi/Documents/code/igt-detect/4-match'
 FEAT_DIR  = '/Users/rgeorgi/Documents/code/igt-detect/5-feats'
-
-# -------------------------------------------
-# Path to wordlist file
-# -------------------------------------------
-WORDLIST = '/Users/rgeorgi/Documents/code/igt-detect/ngrams/wordsEn.txt'
 
 # -------------------------------------------
 # Dependent file libraries.
@@ -20,7 +24,15 @@ ODIN_UTIL_DIR = '../odinutils'
 # -------------------------------------------
 MALLET_DIR = '/Users/rgeorgi/Documents/code/mallet-2.0.7'
 
+# -------------------------------------------
+# Path to wordlist file, for determining the
+# OOV rate for english.
+# -------------------------------------------
+WORDLIST = '/Users/rgeorgi/Documents/code/igt-detect/ngrams/wordsEn.txt'
 
+# =============================================================================
+# List of grams, to be used
+# =============================================================================
 
 # These grams will be searched for case-insensitive.
 GRAM_LIST = ['1SG', '1PL', '1SM',
@@ -68,6 +80,7 @@ F_HAS_NONSTANDARD_FONT = 'has_nonstandard_font'
 F_HAS_SMALLER_FONT = 'has_smaller_font'
 F_HAS_LARGER_FONT  = 'has_larger_font'
 
+T_BASIC = 'words_only'
 T_HAS_LANGNAME = 'has_langname'
 T_HAS_GRAMS = 'has_grams'
 T_HAS_PARENTHETICAL = 'has_parenthetical'
@@ -84,6 +97,7 @@ T_HAS_JPN = 'has_jpn'
 T_HAS_GRK = 'has_grk'
 T_HAS_KOR = 'has_kor'
 T_HAS_CYR = 'has_cyr'
+T_HAS_ACC = 'has_acc_lat'
 T_HAS_DIA = 'has_dia'
 T_HAS_UNI = 'has_uni'
 T_HAS_YEAR = 'has_year'
@@ -106,7 +120,8 @@ FREKI_FEATS = [
 ]
 
 TEXT_FEATS = [
-    T_HAS_LANGNAME # Does this line contain a language name?
+    T_BASIC # Use the words on every line as features.
+    ,T_HAS_LANGNAME # Does this line contain a language name?
     ,T_HAS_PARENTHETICAL # Does this line contain a parenthetical?
     ,T_HAS_CITATION # Does this line contain an author, year citation?
     ,T_HAS_ASTERISK # Does this line contain an asterisk (ungrammatical)
@@ -120,6 +135,7 @@ TEXT_FEATS = [
     ,T_HAS_JPN # Characters in the Japanese unicode range
     ,T_HAS_GRK # Characters in the Greek unicode range
     ,T_HAS_KOR # Characters in the Korean unicode range
+    ,T_HAS_ACC # Has accented Latin unicode characters
     ,T_HAS_CYR # Characters in the Cyrillic unicode range
     ,T_HAS_DIA # Diacritic characters
     ,T_HAS_UNI # ANY of the above unicode ranges

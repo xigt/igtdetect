@@ -302,37 +302,48 @@ def get_textfeats(line: Line, lm : NgramDict) -> dict:
     available for that line.
     """
 
+    # Quick local function to check if a
+    # feature is enabled in the config
+    # and add it to the feature dict if so.
+    feats = {}
+    def checkfeat(name, func):
+        nonlocal feats
+        if name in TEXT_FEATS:
+            feats[name] = func(line)
 
-    feats = {
-        'has_langname': has_langname(line)
-        ,'has_grams': has_grams(line)
-        ,'has_parenthetical': has_parenthetical(line)
-        ,'has_citation': has_citation(line)
-        ,'has_asterisk': has_asterisk(line)
-        ,'has_underscore' : has_underscore(line)
-        ,'has_bracketing': has_bracketing(line)
-        ,'has_quotation': has_quotation(line)
-        ,'has_numbering': has_numbering(line)
-        ,'has_leading_whitespace' : has_leading_whitespace(line)
-        ,'high_oov_rate' : high_oov_rate(line)
-        ,'med_oov_rate' : med_oov_rate(line)
-        # Various language / unicode features
-        ,'has_jpn' : has_japanese(line)
-        ,'has_grk' : has_greek(line)
-        ,'has_kor' : has_korean(line)
-        ,'has_acc' : has_accented_latin(line)
-        ,'has_cyr' : has_cyrillic(line)
-        ,'has_dia' : has_diacritic(line)
-        ,'has_unicode': has_unicode(line)
-        # ,'has_year': has_year(line)
-    }
+    # Quick function to add featuers for words
+    # in the line.
+    def basic_words(line):
+        nonlocal feats
+        for word in split_words(line):
+            if word:
+                feats['word_{}'.format(word)] = 1
 
-    # if lm is not None:
-    #     feats['looks_english'] = looks_english(line, lm)
 
-    for word in split_words(line):
-        if word:
-            feats['word_{}'.format(word)] = 1
+    checkfeat(T_BASIC, basic_words)
+    checkfeat(T_HAS_LANGNAME, has_langname)
+    checkfeat(T_HAS_GRAMS, has_grams)
+    checkfeat(T_HAS_PARENTHETICAL, has_parenthetical)
+    checkfeat(T_HAS_CITATION, has_citation)
+    checkfeat(T_HAS_ASTERISK, has_asterisk)
+    checkfeat(T_HAS_UNDERSCORE, has_underscore)
+    checkfeat(T_HAS_BRACKETING, has_bracketing)
+    checkfeat(T_HAS_QUOTATION, has_quotation)
+    checkfeat(T_HAS_NUMBERING, has_numbering)
+    checkfeat(T_HAS_LEADING_WHITESPACE, has_leading_whitespace)
+    checkfeat(T_HIGH_OOV_RATE, high_oov_rate)
+    checkfeat(T_MED_OOV_RATE, med_oov_rate)
+    checkfeat(T_HAS_JPN, has_japanese)
+    checkfeat(T_HAS_GRK, has_greek)
+    checkfeat(T_HAS_KOR, has_korean)
+    checkfeat(T_HAS_ACC, has_accented_latin)
+    checkfeat(T_HAS_CYR, has_cyrillic)
+    checkfeat(T_HAS_DIA, has_diacritic)
+    checkfeat(T_HAS_UNI, has_unicode)
+    checkfeat(T_HAS_YEAR, has_year)
+    checkfeat(T_LOOKS_ENGLISH, lambda x: looks_english(line, lm))
+
+
     return feats
 
 def add_frekifeats(r: DocReader):
@@ -1083,16 +1094,6 @@ if __name__ == '__main__':
     test_p.add_argument('files', nargs='+', type=globfiles)
 
     # -------------------------------------------
-    # Build LM
-    # -------------------------------------------
-    lm_p = subparsers.add_parser('lm')
-
-    lm_p.add_argument('--type', choices=[TYPE_FREKI, TYPE_TEXT], default=TYPE_FREKI)
-    lm_p.add_argument('--labels', required=True)
-    lm_p.add_argument('--out', required=True, type=lmpath)
-    lm_p.add_argument('files', nargs='+', type=globfiles)
-
-    # -------------------------------------------
 
     args = p.parse_args()
 
@@ -1101,8 +1102,6 @@ if __name__ == '__main__':
     if args.subcommand == 'test':
         extract_feats(filelist, args.type, args.overwrite, skip_noisy=False)
         classify_docs(filelist, args.classifier)
-    elif args.subcommand == 'lm':
-        build_lm(filelist, args.type, args.out, args.labels)
     elif args.subcommand == 'train':
         extract_feats(filelist, args.type, args.overwrite, skip_noisy=True)
         train_classifier(filelist, args.out)

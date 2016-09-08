@@ -28,7 +28,7 @@ MALLET_DIR = '/Users/rgeorgi/Documents/code/mallet-2.0.7'
 # Path to wordlist file, for determining the
 # OOV rate for english.
 # -------------------------------------------
-WORDLIST = '/Users/rgeorgi/Documents/code/igt-detect/ngrams/wordsEn.txt'
+WORDLIST = './data/wordlists/english_words.txt'
 
 # =============================================================================
 # List of grams, to be used

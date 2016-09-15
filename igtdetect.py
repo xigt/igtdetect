@@ -54,6 +54,7 @@ class DocReader(Iterator):
             self.linedict[self.lineno] = line
         self.seek(0)
 
+
     def seek(self, offset, whence=0):
         self.fh.seek(offset, whence)
 
@@ -155,7 +156,6 @@ class FrekiReader(DocReader):
         self.fontsizes = defaultdict(Counter)
 
 
-
         for line in self:
             self.llxs[self.lineno] = self.bbox.llx
             self.widths[self.lineno] = self.width
@@ -216,27 +216,40 @@ class FrekiReader(DocReader):
                                 start=int(d[-2]), stop=int(d[-1]))
                 self.block_dict[nd['block_id']] = fb
                 self.cur_block = fb
+                data = self.fh.__next__()
+                continue
 
             elif data.startswith('line='):
-                preamble, text = re.search('(line=.*?):(.*)\n', data).groups()
-                if 'tag=' in preamble:
-                    lineno, tag, fonts = [l.split('=')[1] for l in preamble.split()]
-                else:
-                    lineno, fonts = [l.split('=')[1] for l in preamble.split()]
-                    tag = None
+                try:
+                    preamble, text = re.search('(line=.*?):(.*)\n', data).groups()
 
-                fonts = (tuple((font, float(size)) for font, size in  [f.split('-') for f in fonts.split(',')]))
+                    pre_dict = {x[0]:x[1] for x in re.findall('(\S+)=(\S+)', preamble)}
+                    lineno = int(pre_dict['line'])
 
-                l = Line(text, int(lineno), fonts, label=tag)
+                    if 'tag' in pre_dict:
+                        tag = pre_dict['tag']
 
-                self.lineno = int(lineno)
+                    fonts = []
+                    for f in pre_dict['fonts'].split(','):
+                        fonts.append(f.split('-'))
 
-                # Update the block dicts
-                self.cur_block.append(l)
-                self.block_ids[int(lineno)] = self.cur_block.block_id
-                return l
+                    l = Line(text, int(lineno), fonts, label=tag)
 
-            data = self.fh.__next__()
+                    self.lineno = int(lineno)
+
+                    # Update the block dicts
+                    self.cur_block.append(l)
+                    self.block_ids[int(lineno)] = self.cur_block.block_id
+                    return l
+                except Exception as e:
+                    print(e)
+                    sys.exit()
+
+            else:
+                data = self.fh.__next__()
+                continue
+
+        raise StopIteration()
 
     def block_for_line(self, lineno) -> FrekiBlock:
         return self.block_dict[self.block_ids[lineno]]
@@ -364,7 +377,6 @@ def get_textfeats(line: Line, lm : NgramDict) -> dict:
         for word in split_words(line):
             if word:
                 feats['word_{}'.format(word)] = 1
-
 
     checkfeat(T_BASIC, basic_words)
     checkfeat(T_HAS_LANGNAME, has_langname)

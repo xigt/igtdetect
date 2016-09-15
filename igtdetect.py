@@ -74,6 +74,9 @@ class BBox(object):
     def __init__(self, tup):
         self.llx, self.lly, self.urx, self.ury = tup
 
+    def __str__(self):
+        return '{},{},{},{}'.format(self.llx, self.lly, self.urx, self.ury)
+
 class FrekiBlock(list):
     #doc_id=601.tetml page=1 block_id=1-2 bbox=147.5,711.0,465.4,723.0 1 1
     def __init__(self, lines=None, doc_id = None, page = None, block_id = None, bbox = None, start = 0, stop = 0):
@@ -87,7 +90,40 @@ class FrekiBlock(list):
         self.stop = stop
         super().__init__(lines)
 
+    def __copy__(self):
+        fb = FrekiBlock(doc_id=self.doc_id, page=self.page, block_id=self.block_id, bbox=self.bbox, start=self.start, stop=self.stop)
+        for line in self:
+            fb.append(copy(line))
+        return fb
 
+    def set_line_label(self, lineno: int, label: str):
+        for line in self:
+            if line.lineno == lineno:
+                line.label = label
+                break
+
+
+    def preamble(self):
+        return 'doc_id={} page={} block_id={} bbox={} {} {}'.format(self.doc_id,
+                                                                    self.page,
+                                                                    self.block_id,
+                                                                    self.bbox,
+                                                                    self.start,
+                                                                    self.stop)
+    def __str__(self):
+        ret_str = '{}\n'.format(self.preamble())
+
+        # -------------------------------------------
+        # Get max length of preambles
+        # -------------------------------------------
+        max_pre_len = max([len(l.preamble()) for l in self])
+
+        # -------------------------------------------
+        # Add the content of the lines in the block.
+        # -------------------------------------------
+        for line in self:
+            ret_str += '{}:{}\n'.format(line.preamble(max_pre_len), line)
+        return ret_str
 
 
 class FrekiReader(DocReader):
@@ -202,7 +238,7 @@ class FrekiReader(DocReader):
 
             data = self.fh.__next__()
 
-    def block_for_line(self, lineno):
+    def block_for_line(self, lineno) -> FrekiBlock:
         return self.block_dict[self.block_ids[lineno]]
 
 class Line(str):
@@ -213,8 +249,18 @@ class Line(str):
         l.label = label
         return l
 
+    def __copy__(self):
+        l = Line(seq=self, lineno=self.lineno, fonts=self.fonts, label=self.label)
+        return l
+
     def search(self, pattern, flags=0):
         return re.search(pattern, self, flags=flags)
+
+    def preamble(self, length=0):
+        fonts = ','.join(['{}-{}'.format(x[0], x[1]) for x in self.fonts])
+        pre = 'line={} tag={} fonts={}'.format(self.lineno, self.label, fonts)
+
+        return '{{:<{}}}'.format(length).format(pre)
 
 
 class NgramDict(object):
@@ -800,6 +846,12 @@ def classify_doc(path, classifier):
     return classifications
 
 class SpanCounter(object):
+    """
+    This is a utility class that helps calculate
+    performance over spans of IGT lines, rather
+    than the per-line accuracies, which are in
+    some ways less helpful.
+    """
     def __init__(self):
         self.last_gold = 'O'
         self.last_guess = 'O'
@@ -948,12 +1000,11 @@ class SpanCounter(object):
 
         print('\t'.join(['']+['{:4.2f}'.format(r) for r in self._recalls()]))
 
+# =============================================================================
+# Testing (Apply Classifier to new Documents)
+# =============================================================================
 
-
-
-
-
-def classify_docs(filelist, class_path):
+def classify_docs(filelist, class_path, outdir, no_eval):
 
     feat_paths = [feat_file_for_path(p) for p in filelist]
     if not feat_paths:
@@ -963,6 +1014,16 @@ def classify_docs(filelist, class_path):
     sc = SpanCounter()
 
     for path, feat_path in zip(filelist, feat_paths):
+
+        # -------------------------------------------
+        # If we want files output, start opening a file.
+        # -------------------------------------------
+        if outdir:
+            os.makedirs(outdir, exist_ok=True)
+            out_path = os.path.join(outdir, os.path.basename(path))
+            out_f    = open(out_path, 'w', encoding='utf-8')
+
+        # -------------------------------------------
         LOG.log(NORM_LEVEL, 'Classifying file "{}"'.format(path))
         classifications = classify_doc(feat_path, class_path)
         fr = FrekiReader(open(path, 'r', encoding='utf-8'))
@@ -975,11 +1036,36 @@ def classify_docs(filelist, class_path):
         # labeled.
         # -------------------------------------------
 
+        last_block = None # Keep track of which block the last block is so we can write out
+
         for lineno, classification in zip(sorted(fr.featdict.keys()), classifications):
             line = fr.linedict[lineno]
-
             prediction = classification[0][0]
 
+            # -------------------------------------------
+            # Get the block that contained the previous line.
+            # -------------------------------------------
+            cur_block = fr.block_for_line(lineno)
+
+            # -------------------------------------------
+            # If we have moved onto the next block, write
+            # out the previous one.
+            # -------------------------------------------
+            if last_block is not None and cur_block.block_id != last_block.block_id:
+                out_f.write('{}\n'.format(last_block))
+                last_block = copy(cur_block)
+            if last_block is None:
+                last_block = copy(cur_block)
+
+            # -------------------------------------------
+            # Now, let's set the line label on the current
+            # line.
+            # -------------------------------------------
+            cur_block.set_line_label(lineno, prediction)
+
+            # -------------------------------------------
+            #
+            # -------------------------------------------
             raw_label = line.label
             if raw_label.startswith('*'):
                 raw_label = raw_label.replace('*', '')
@@ -988,13 +1074,18 @@ def classify_docs(filelist, class_path):
 
             sc.add_line(lineno, gold, prediction)
 
+        if outdir:
+            # If we still have an unwritten block, write it out.
+            out_f.write('{}\n'.format(last_block))
+            out_f.close()
 
-    sc.matrix()
-    print()
-    print(' Classifiation Acc: {:.2f}'.format(sc.precision()))
-    print('       Non-O P/R/F: {}'.format(','.join(['{:.2f}'.format(x) for x in sc.prf(['O'])])))
-    print('  Exact-span P/R/F: {}'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=True)])))
-    print('Partial-span P/R/F: {}'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=False)])))
+    if not no_eval:
+        sc.matrix()
+        print()
+        print(' Classifiation Acc: {:.2f}'.format(sc.precision()))
+        print('       Non-O P/R/F: {}'.format(','.join(['{:.2f}'.format(x) for x in sc.prf(['O'])])))
+        print('  Exact-span P/R/F: {}'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=True)])))
+        print('Partial-span P/R/F: {}'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=False)])))
 
 
 
@@ -1029,32 +1120,6 @@ def lmpath(pathname):
 
 def split_words(sent):
     return [re.sub('[#:]', '', w.lower()) for w in re.split('[\.\-\s]', sent)]
-
-def build_lm(filelist, filetype, outpath, label_dir):
-
-    ngd = NgramDict()
-
-    for path in filelist:
-
-        with open(path, 'r', encoding='utf-8') as f:
-
-            r = FrekiReader(f)
-            for lineno in r.linedict.keys():
-
-                # We're only interested in NON-IGT data...
-                if lf.get(lineno) is None:
-                    line = r.linedict[lineno]
-                    for word in split_words(line):
-                        if word:
-                            for i, char in enumerate(word.lower()):
-                                pc = '#' if i-1 < 0 else word[i-1]
-                                nc = '#' if i >= len(word)-1 else word[i+1]
-                                ngd.add(pc, char, nc)
-
-    LOG.log(NORM_LEVEL, 'Writing out language model..')
-    with open(outpath, 'wb') as f:
-        pickle.dump(ngd, f)
-
 
 
 
@@ -1091,17 +1156,17 @@ if __name__ == '__main__':
     test_p.add_argument('--type', choices=[TYPE_FREKI, TYPE_TEXT], default=TYPE_FREKI)
     test_p.add_argument('-f','--overwrite', action='store_true', help='Overwrite text vectors')
     test_p.add_argument('--classifier', required=True)
-    test_p.add_argument('files', nargs='+', type=globfiles)
-
+    test_p.add_argument('files', nargs='+', type=globfiles, help='Files to apply classifier against')
+    test_p.add_argument('-o', '--outdir', help='Output directory for classified files; none are output if unspecified.')
+    test_p.add_argument('--no-eval', help="Don't try to evaluate performance against the files.", action='store_true')
     # -------------------------------------------
-
     args = p.parse_args()
 
     filelist = flatten(args.files)
 
     if args.subcommand == 'test':
         extract_feats(filelist, args.type, args.overwrite, skip_noisy=False)
-        classify_docs(filelist, args.classifier)
+        classify_docs(filelist, args.classifier, args.outdir, args.no_eval)
     elif args.subcommand == 'train':
         extract_feats(filelist, args.type, args.overwrite, skip_noisy=True)
         train_classifier(filelist, args.out)

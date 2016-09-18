@@ -1028,7 +1028,6 @@ def classify_doc(path, classifier, classifier_info):
     # reverse sort by weight.
     # -------------------------------------------
     for line in p.stdout:
-        print(line.decode('utf-8'))
         scores = []
         for label, score in re.findall('(\S+)\s+([0-9\-\.E]+)', line.decode('utf-8')):
             scores.append((label, float(score)))

@@ -1341,15 +1341,6 @@ if __name__ == '__main__':
     subparsers.required = True
 
     # -------------------------------------------
-    # FEATURE EXTRACTION
-    # -------------------------------------------
-    extract_p = subparsers.add_parser('extract')
-
-    extract_p.add_argument('--type', choices=[TYPE_FREKI, TYPE_TEXT], default=TYPE_FREKI)
-    extract_p.add_argument('--lm', default=None)
-    extract_p.add_argument('files', nargs='+', type=globfiles)
-
-    # -------------------------------------------
     # TRAINING
     # -------------------------------------------
     train_p = subparsers.add_parser('train')

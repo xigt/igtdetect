@@ -29,10 +29,17 @@ ODIN_UTIL_DIR = '../odinutils'
 MALLET_DIR = '/Users/rgeorgi/Documents/code/mallet-2.0.7'
 
 # -------------------------------------------
-# Path to wordlist file, for determining the
-# OOV rate for english.
+# Path to various wordlists
 # -------------------------------------------
-WORDLIST = './data/wordlists/english_words.txt'
+# Large English language wordlist.
+EN_WORDLIST = './data/wordlists/english_words.txt'
+
+# List of gloss-line words extracted from ODIN-2.1
+GLS_WORDLIST = './data/wordlists/gloss.txt'
+
+# List of meta line words extracted from ODIN-2.1
+MET_WORDLIST = './data/wordlists/meta.txt'
+
 
 # =============================================================================
 # List of grams, to be used
@@ -122,6 +129,8 @@ T_HAS_NUMBERING = 'has_numbering'
 T_HAS_LEADING_WHITESPACE = 'has_leading_whitespace'
 T_HIGH_OOV_RATE = 'high_oov_rate'
 T_MED_OOV_RATE = 'med_oov_rate'
+T_HIGH_GLS_OOV_RATE = 'high_gls_oov_rate'
+T_MED_GLS_OOV_RATE = 'med_gls_oov_rate'
 T_HAS_JPN = 'has_jpn'
 T_HAS_GRK = 'has_grk'
 T_HAS_KOR = 'has_kor'
@@ -161,6 +170,8 @@ TEXT_FEATS = [
     ,T_HAS_LEADING_WHITESPACE # Does this line have leading whitespace?
     ,T_HIGH_OOV_RATE # Is the OOV rate per word very high?
     ,T_MED_OOV_RATE  # Is the OOV rate per word moderately high?
+    # ,T_HIGH_GLS_OOV_RATE # Is the OOV rate per word very high using the gloss line wordlist?
+    # ,T_MED_GLS_OOV_RATE # Is the OOV rate per word moderately high using the gloss line wordlist?
     ,T_HAS_JPN # Characters in the Japanese unicode range
     ,T_HAS_GRK # Characters in the Greek unicode range
     ,T_HAS_KOR # Characters in the Korean unicode range
@@ -169,7 +180,6 @@ TEXT_FEATS = [
     ,T_HAS_DIA # Diacritic characters
     ,T_HAS_UNI # ANY of the above unicode ranges
     ,T_HAS_YEAR # Is there a four-digit year (from 1800-20XX)
-    # ,T_LOOKS_ENGLISH # Is the logprob of characters below a threshold of Eng similarity
 ]
 
 

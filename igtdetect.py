@@ -66,9 +66,12 @@ class WordlistFile(set):
         super().__init__()
         with open(path, 'r', encoding='utf-8') as f:
             for line in f:
-                self.add(line.strip())
+                if line.strip():
+                    self.add(line.split()[0])
 
-WLF = WordlistFile(WORDLIST) if os.path.exists(WORDLIST) else None
+EN_WL = WordlistFile(EN_WORDLIST) if os.path.exists(EN_WORDLIST) else None
+GL_WL = WordlistFile(GLS_WORDLIST) if os.path.exists(GLS_WORDLIST) else None
+MT_WL = WordlistFile(MET_WORDLIST) if os.path.exists(MET_WORDLIST) else None
 # -------------------------------------------
 
 class BBox(object):
@@ -434,8 +437,8 @@ def get_textfeats(line: Line, lm : NgramDict) -> dict:
     checkfeat(T_HAS_QUOTATION, has_quotation)
     checkfeat(T_HAS_NUMBERING, has_numbering)
     checkfeat(T_HAS_LEADING_WHITESPACE, has_leading_whitespace)
-    checkfeat(T_HIGH_OOV_RATE, high_oov_rate)
-    checkfeat(T_MED_OOV_RATE, med_oov_rate)
+    checkfeat(T_HIGH_OOV_RATE, high_en_oov_rate)
+    checkfeat(T_MED_OOV_RATE, med_en_oov_rate)
     checkfeat(T_HAS_JPN, has_japanese)
     checkfeat(T_HAS_GRK, has_greek)
     checkfeat(T_HAS_KOR, has_korean)
@@ -444,8 +447,7 @@ def get_textfeats(line: Line, lm : NgramDict) -> dict:
     checkfeat(T_HAS_DIA, has_diacritic)
     checkfeat(T_HAS_UNI, has_unicode)
     checkfeat(T_HAS_YEAR, has_year)
-    checkfeat(T_LOOKS_ENGLISH, lambda x: looks_english(line, lm))
-
+    checkfeat(T_HIGH_GLS_OOV_RATE, high_gls_oov_rate)
 
     return feats
 
@@ -531,7 +533,7 @@ def extract_feats(filelist, filetype, overwrite=False, skip_noisy=False):
 
 def extract_feat_for_path(path, overwrite=False, skip_noisy=False):
     """
-    
+
     """
     feat_path = get_feat_path(path)
 
@@ -701,14 +703,25 @@ def clean_word(s):
     w_match = word_re.findall(s)
     return w_match
 
-def med_oov_rate(line: Line):
-    return 0.5 > oov_rate(line) > 0.2
+# -------------------------------------------
+# OOV Rate Functions
+#
+# Use a set threshold to decide at what
+# ratio of OOV words to In-Vocabulary words
+# constitutes being too dissimilar.
+# -------------------------------------------
 
-def high_oov_rate(line: Line):
-    return oov_rate(line) >= 0.5
+def med_en_oov_rate(line: Line):
+    return 0.5 > oov_rate(EN_WL, line) > 0.2
 
-def oov_rate(line: Line):
-    if not WLF:
+def high_en_oov_rate(line: Line):
+    return oov_rate(EN_WL, line) >= 0.5
+
+def high_gls_oov_rate(line:Line):
+    return oov_rate(GL_WL, line) > 0.5
+
+def oov_rate(wl: WordlistFile, line: Line):
+    if not wl:
         return 0.0
     else:
 
@@ -719,7 +732,7 @@ def oov_rate(line: Line):
         if len(words) <= 2:
             return 0.0
 
-        oov_words = Counter([w in WLF for w in words])
+        oov_words = Counter([w in EN_WL for w in words])
         c_total = sum([v for v in oov_words.values()])
 
         if not c_total:

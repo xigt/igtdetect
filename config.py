@@ -10,8 +10,14 @@
 # -------------------------------------------
 # Where to find and place files.
 # -------------------------------------------
+
 MATCH_DIR = '/Users/rgeorgi/Documents/code/igt-detect/4-match'
-FEAT_DIR  = '/Users/rgeorgi/Documents/code/igt-detect/5-feats'
+
+# The directory in which to place the human readable feature files.
+FEAT_DIR  = 'feats'
+
+# The directory in which to place the binary vector files for mallet.
+VECT_DIR  = 'vectors'
 
 # -------------------------------------------
 # Dependent file libraries.
@@ -46,12 +52,37 @@ CASED_GRAM_LIST = ['POSS',
                    'FUT', 'PROG', 'PRES', 'PASS']
 
 # =============================================================================
+# LABEL Setup
+#
+# Here the settings for the
+# =============================================================================
+
+# Use "B" and "I" labels in combination with "L", "G", "T", and "M" labels
+# to differentiate between different types of lines occurring in the
+# middle of an IGT vs. not
+USE_BI_LABELS = False
+
+# Some lines appear as combinations of labels, such as "L-G-T" for all
+# three on a single line. If this is set to true, these types of
+# combined labels are allowed. If set to false, only the first
+# of the multiple labels will be used.
+USE_MULTI_LABELS = False
+
+# "Flags" are additional information that is intended to be included in
+# the information about the line, such as +AC (for Author Citation)
+# or +LN (for Language Name). These are stripped out by default, as
+# otherwise they would result in an explosion of labels.
+STRIP_FLAGS = True
+
+
+# =============================================================================
 # Feature selection.
 #
 # In this section, various features are defined and can be enabled or
 # disabled by the user. Read the comments, as some definitions are constants
 # and should not be edited.
 # =============================================================================
+
 
 # -------------------------------------------
 # High-level features.
@@ -142,6 +173,8 @@ TEXT_FEATS = [
     ,T_HAS_YEAR # Is there a four-digit year (from 1800-20XX)
     # ,T_LOOKS_ENGLISH # Is the logprob of characters below a threshold of Eng similarity
 ]
+
+
 
 # =============================================================================
 # Regular Expressions

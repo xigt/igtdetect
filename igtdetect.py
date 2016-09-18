@@ -127,6 +127,7 @@ class FrekiBlock(list):
         return ret_str
 
 
+
 class FrekiReader(DocReader):
     def __init__(self, fh, lm=None):
         self.fh = fh
@@ -184,10 +185,6 @@ class FrekiReader(DocReader):
         add_frekifeats(self)
         self.seek(0)
 
-    def get_label(self, lineno):
-        line = self.linedict[lineno]
-        return line.label if line.label else 'O'
-
     def most_common_font(self):
         return self.fonts.most_common(1)[0][0]
 
@@ -221,19 +218,52 @@ class FrekiReader(DocReader):
 
             elif data.startswith('line='):
                 try:
-                    preamble, text = re.search('(line=.*?):(.*)\n', data).groups()
+                    preamble, text = re.search('(line=.*?):(.*)$', data).groups()
 
                     pre_dict = {x[0]:x[1] for x in re.findall('(\S+)=(\S+)', preamble)}
                     lineno = int(pre_dict['line'])
 
+                    # -------------------------------------------
+                    # Format the tag and flags
+                    # -------------------------------------------
                     if 'tag' in pre_dict:
-                        tag = pre_dict['tag']
+                        fulltag = pre_dict['tag']
+                        flags = fulltag.split('+')[1:]
+                        tag   = fulltag.split('+')[0]
+
+                        # -------------------------------------------
+                        # Handle the tag according to the logic in the
+                        # config file.
+                        # -------------------------------------------
+
+                        # If we are not allowing "multi" labels, only
+                        # use the first label.
+                        if not USE_MULTI_LABELS:
+                            tag = tag.split('-')[0]
+
+                        # If we are using "B" and "I" labels, label the line
+                        # according to whether or not a new span has started
+                        # or not.
+                        if USE_BI_LABELS and 'O' not in tag:
+                            if __name__ == '__main__':
+                                if __name__ == '__main__':
+                                    if self.block_for_line(max(lineno-1, 1)).block_id != self.cur_block.block_id:
+                                        tag = 'B-{}'.format(tag)
+                                    else:
+                                        tag = 'I-{}'.format(tag)
+
+                        # If we are not stripping the tags off, re-add them to
+                        # the label
+                        if not STRIP_FLAGS:
+                            tag = '+'.join([tag] + flags)
+
 
                     fonts = []
-                    for f in pre_dict['fonts'].split(','):
-                        fonts.append(f.split('-'))
+                    if 'fonts' in pre_dict:
+                        for f in pre_dict['fonts'].split(','):
+                            fonts.append(f.split('-'))
 
-                    l = Line(text, int(lineno), fonts, label=tag)
+                    l = Line(text, int(lineno), fonts, label=tag, flags=flags)
 
                     self.lineno = int(lineno)
 
@@ -241,6 +271,8 @@ class FrekiReader(DocReader):
                     self.cur_block.append(l)
                     self.block_ids[int(lineno)] = self.cur_block.block_id
                     return l
+
+                # TODO: This exception never quite gets raised
                 except Exception as e:
                     print(e)
                     sys.exit()
@@ -255,23 +287,36 @@ class FrekiReader(DocReader):
         return self.block_dict[self.block_ids[lineno]]
 
 class Line(str):
-    def __new__(cls, seq='', lineno: int = 0, fonts: tuple=None, label: str = None):
+    """
+    This is a class to contain a line that is intended to be a classification target instance.
+    """
+    def __new__(cls, seq='', lineno: int = 0, fonts: tuple=None, label: str = None, flags: tuple=None):
+
+        if fonts is None:
+            fonts = tuple()
+        if flags is None:
+            flags = tuple()
+
         l = str.__new__(cls, seq)
         l.lineno = lineno
         l.fonts = fonts
         l.label = label
+        l.flags = flags
         return l
 
     def __copy__(self):
-        l = Line(seq=self, lineno=self.lineno, fonts=self.fonts, label=self.label)
+        l = Line(seq=self, lineno=self.lineno, fonts=self.fonts, label=self.label, flags=self.flags)
         return l
 
     def search(self, pattern, flags=0):
         return re.search(pattern, self, flags=flags)
 
+    def fulltag(self):
+        return '+'.join(list(self.label)+list(self.flags))
+
     def preamble(self, length=0):
         fonts = ','.join(['{}-{}'.format(x[0], x[1]) for x in self.fonts])
-        pre = 'line={} tag={} fonts={}'.format(self.lineno, self.label, fonts)
+        pre = 'line={} tag={} fonts={}'.format(self.lineno, self.fulltag(), fonts)
 
         return '{{:<{}}}'.format(length).format(pre)
 
@@ -455,27 +500,43 @@ def get_all_line_feats(featdict, lineno) -> dict:
 
     return all_feats
 
-def match_file_for_path(path):
-    return os.path.join(MATCH_DIR, os.path.splitext(os.path.basename(path))[0] + '.txt')
+def _path_rename(path, ext):
+    return os.path.splitext(os.path.basename(path))[0] + ext
 
-def feat_file_for_path(path):
-    return os.path.join(FEAT_DIR, os.path.splitext(os.path.basename(path))[0] + '.feats')
+def get_match_path(path):
+    return os.path.join(MATCH_DIR, _path_rename(path, '.txt'))
+
+def get_feat_path(path):
+    return os.path.join(FEAT_DIR, _path_rename(path, '_feats.txt'))
+
+def get_vect_path(path):
+    return os.path.join(VECT_DIR, _path_rename(path, '.vector'))
 
 # -------------------------------------------
 # Perform feature extraction.
 # -------------------------------------------
 def extract_feats(filelist, filetype, overwrite=False, skip_noisy=False):
+    """
+    Perform feature extraction over a list of files.
+
+    Call extract_feat_for_path() in parallel for a speed boost.
+    """
 
     p = Pool()
 
     for path in filelist:
         p.apply_async(extract_feat_for_path, args=[path, overwrite, skip_noisy])
+        # extract_feat_for_path(path, overwrite, skip_noisy)
 
     p.close()
     p.join()
 
+
 def extract_feat_for_path(path, overwrite=False, skip_noisy=False):
-    feat_path = feat_file_for_path(path)
+    """
+    
+    """
+    feat_path = get_feat_path(path)
 
     path_rel = os.path.relpath(path, __file__)
     feat_rel = os.path.relpath(feat_path, __file__)
@@ -500,11 +561,7 @@ def extract_feat_for_path(path, overwrite=False, skip_noisy=False):
 
             # Now, let's iterate through again and extract features.
             for lineno in sorted(r.featdict.keys()):
-                label = r.linedict[lineno].label.split('+')[0]
-
-                # If the line is not labeled, assume it is "O"
-                if label is None:
-                    label = 'O'
+                label = r.linedict[lineno].label
 
                 # If the label contains an asterisk, that means
                 # it is very noisy. Don't use it for either "O" or any
@@ -716,13 +773,55 @@ INFO_BIN   = os.path.join(MALLET_DIR, 'bin/classifier2info')
 
 
 def label_sort(l):
-    order = ['O', 'L', 'L-T', 'G', 'T', 'M']
+    order = ['O', 'B', 'I', 'L', 'L-T', 'G', 'T', 'M']
     if l in order:
         return order.index(l)
     else:
         return float('inf')
 
-def get_class_feats(classpath, limit=30):
+class ClassifierInfo():
+    """
+    This is a class for storing information about
+    the mallet classifier, such as which features are
+    the most informative, and what labels are among
+    those that are expected to be seen.
+    """
+    def __init__(self):
+        self.featdict = defaultdict(partial(defaultdict, float))
+        self.labels = set([])
+
+    def add_feat(self, label, feat, weight):
+        self.featdict[feat][label] = float(weight)
+        self.labels.add(label)
+
+    def print_features(self, limit=30):
+        vals = []
+        defaults = []
+        for feat in self.featdict.keys():
+            for label, val in self.featdict[feat].items():
+                if feat == '<default>':
+                    defaults.append((feat, label, val))
+                else:
+                    vals.append((feat, label, val))
+
+        defaults = sorted(defaults, key=lambda x: label_sort(x[1]))
+        vals = sorted(vals, key=lambda x: abs(x[2]), reverse=True)[:limit]
+
+        longest_featname = max([len(x[0]) for x in vals])
+        longest_label = max([len(x[1]) for x in vals] + [5])
+
+        format_str = '{{:{}}}\t{{:{}}}\t{{:<5.6}}'.format(longest_featname, longest_label)
+
+        print(format_str.format('feature', 'label', 'weight'))
+        linesep = '-' * (longest_featname + longest_label + 10)
+        print(linesep)
+        for d in defaults:
+            print(format_str.format(*d))
+        print(linesep)
+        for val in vals:
+            print(format_str.format(*val))
+
+def get_classifier_info(classpath, limit=30):
     """
     List the top $limit most informative features for the
      given classifier.
@@ -733,7 +832,7 @@ def get_class_feats(classpath, limit=30):
     p = Popen([INFO_BIN,
                '--classifier', classpath], stdout=PIPE)
 
-    featdict = defaultdict(partial(defaultdict, float))
+    ci = ClassifierInfo()
 
     label = None
     for line in p.stdout:
@@ -743,39 +842,20 @@ def get_class_feats(classpath, limit=30):
 
         else:
             feat, weight = line.split()
-            featdict[feat][label] = float(weight)
+            ci.add_feat(label, feat, weight)
 
-    vals = []
-    defaults = []
-    for feat in featdict.keys():
-        for label, val in featdict[feat].items():
-            if feat == '<default>':
-                defaults.append((feat, label, val))
-            else:
-                vals.append((feat, label, val))
+    return ci
 
 
-    defaults = sorted(defaults, key=lambda x: label_sort(x[1]))
-    vals = sorted(vals, key=lambda x: abs(x[2]), reverse=True)[:limit]
 
-    longest_featname = max([len(x[0]) for x in vals])
-    longest_label    = max([len(x[1]) for x in vals]+[5])
-
-    format_str = '{{:{}}}\t{{:{}}}\t{{:<5.6}}'.format(longest_featname, longest_label)
-
-    print(format_str.format('feature', 'label', 'weight'))
-    linesep = '-'*(longest_featname+longest_label+10)
-    print(linesep)
-    for d in defaults:
-        print(format_str.format(*d))
-    print(linesep)
-    for val in vals:
-        print(format_str.format(*val))
-
-def combine_vectors(pathlist):
+def combine_feat_files(pathlist, out_path=None):
     # Create the training file.
 
-    combined_f = NamedTemporaryFile(mode='w', encoding='utf-8', delete=False)
+    if out_path is None:
+        combined_f = NamedTemporaryFile(mode='w', encoding='utf-8', delete=False)
+        out_path = combined_f.name
+    else:
+        combined_f = open(out_path, 'w', encoding='utf-8')
 
     # -------------------------------------------
     # 1) Combine all the instances in the files...
@@ -785,34 +865,34 @@ def combine_vectors(pathlist):
             for line in f:
                 combined_f.write(line)
     combined_f.close()
-    return combined_f.name
+    return out_path
 
 def train_classifier(filelist, class_path):
 
-    # First start by converting the filelist of
-    feat_paths  = [feat_file_for_path(p) for p in filelist]
+    # Get feature paths for all the input files.
+    feat_paths  = [get_feat_path(p) for p in filelist]
 
 
     if not feat_paths:
         LOG.critical("No text vector files were found.")
 
-    combined_vector_path = combine_vectors(feat_paths)
+    # Now, create an output feature file...
+    combined_feat_path = combine_feat_files(feat_paths)
 
+    # And convert it to a vector.
+    train_vector_path = convert_to_vectors(combined_feat_path)
 
-    # -------------------------------------------
-    # 2) Create the training vectors for mallet.
-    # -------------------------------------------
-    vector_path = convert_to_vectors(combined_vector_path)
 
     p = Popen([MALLET_BIN, 'train-classifier',
                '--trainer', 'MaxEntTrainer',
-               '--input', vector_path,
+               '--input', train_vector_path,
                '--output-classifier', class_path])
     p.wait()
 
-    get_class_feats(class_path)
+    ci = get_classifier_info(class_path)
+    ci.print_features()
 
-    os.unlink(combined_vector_path)
+    os.unlink(combined_feat_path)
 
 
 def convert_to_vectors(path, prev_pipe_path=None, out_path = None):
@@ -826,6 +906,7 @@ def convert_to_vectors(path, prev_pipe_path=None, out_path = None):
         vector_path = vector_f.name
     else:
         vector_path = out_path
+        os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
     args = [MALLET_BIN, 'import-svmlight',
             '--input', path,
@@ -840,12 +921,31 @@ def convert_to_vectors(path, prev_pipe_path=None, out_path = None):
 # -------------------------------------------
 # DO the classification
 # -------------------------------------------
-def classify_doc(path, classifier):
+def classify_doc(path, classifier, classifier_info):
+
+    # -------------------------------------------
+    # We don't care about the labels that are
+    # currently on the document, and they
+    # can crash mallet, so let's set them
+    # all to a random label used in training the provided model.
+    # -------------------------------------------
+    label_to_use = classifier_info.labels.pop()
+
+    temp_in = NamedTemporaryFile('w', encoding='utf-8', delete=False)
+    with open(path, 'r') as f:
+        for line in f:
+            data = line.split()
+            data[0] = label_to_use
+            temp_in.write('{}\n'.format('\t'.join(data)))
+    temp_in.close()
+
+
     classifications = []
     p = Popen([MALLET_BIN, 'classify-svmlight',
                '--classifier', classifier,
-               '--input', path,
+               '--input', temp_in.name,
                '--output', '-'], stdout=PIPE)
+
 
     for line in p.stdout:
         scores = []
@@ -854,6 +954,11 @@ def classify_doc(path, classifier):
 
         classification = tuple(sorted(scores, key=lambda x: x[1], reverse=True))
         classifications.append(classification)
+
+    if p.returncode:
+        raise Exception("There was an error running the classifier.")
+
+    os.unlink(temp_in.name)
 
     return classifications
 
@@ -898,7 +1003,11 @@ class SpanCounter(object):
             return self.exact_matches() / den if den > 0 else 0
 
     def span_fmeasure(self, exact=True):
-        return 2*(self.span_precision(exact)*self.span_recall(exact))/(self.span_precision(exact)+self.span_recall(exact))
+        denom = (self.span_precision(exact)+self.span_recall(exact))
+        if denom == 0:
+            return 0
+        else:
+            return 2*(self.span_precision(exact)*self.span_recall(exact))/denom
 
 
     def partial_recall(self):
@@ -994,7 +1103,11 @@ class SpanCounter(object):
         return (self.precision(exclude), self.recall(exclude), self.f_measure(exclude))
 
     def f_measure(self, exclude=list()):
-        return 2*(self.precision(exclude) * self.recall(exclude))/(self.precision(exclude)+self.recall(exclude))
+        denom = self.precision(exclude)+self.recall(exclude)
+        if denom == 0:
+            return 0
+        else:
+            return 2*(self.precision(exclude) * self.recall(exclude))/denom
 
     def _vals(self):
         return [[self._matrix[gold][label] for gold in self._labels()] for label in self._labels()]
@@ -1018,7 +1131,7 @@ class SpanCounter(object):
 
 def classify_docs(filelist, class_path, outdir, no_eval):
 
-    feat_paths = [feat_file_for_path(p) for p in filelist]
+    feat_paths = [get_feat_path(p) for p in filelist]
     if not feat_paths:
         LOG.critical("No text vector files were found.")
         sys.exit()
@@ -1036,8 +1149,15 @@ def classify_docs(filelist, class_path, outdir, no_eval):
             out_f    = open(out_path, 'w', encoding='utf-8')
 
         # -------------------------------------------
+        # Obtain the info from the saved classifier.
+        # -------------------------------------------
+        ci = get_classifier_info(class_path)
+
+        # -------------------------------------------
+        # Classify the individual docs
+        # -------------------------------------------
         LOG.log(NORM_LEVEL, 'Classifying file "{}"'.format(path))
-        classifications = classify_doc(feat_path, class_path)
+        classifications = classify_doc(feat_path, class_path, ci)
         fr = FrekiReader(open(path, 'r', encoding='utf-8'))
 
         assert len(list(fr.featdict.keys())) == len(classifications)
@@ -1073,7 +1193,7 @@ def classify_docs(filelist, class_path, outdir, no_eval):
             # Now, let's set the line label on the current
             # line.
             # -------------------------------------------
-            cur_block.set_line_label(lineno, prediction)
+            last_block.set_line_label(lineno, prediction)
 
             # -------------------------------------------
             #

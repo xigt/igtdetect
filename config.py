@@ -11,8 +11,6 @@
 # Where to find and place files.
 # -------------------------------------------
 
-MATCH_DIR = '/Users/rgeorgi/Documents/code/igt-detect/4-match'
-
 # The directory in which to place the human readable feature files.
 FEAT_DIR  = 'feats'
 

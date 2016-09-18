@@ -503,9 +503,6 @@ def get_all_line_feats(featdict, lineno) -> dict:
 def _path_rename(path, ext):
     return os.path.splitext(os.path.basename(path))[0] + ext
 
-def get_match_path(path):
-    return os.path.join(MATCH_DIR, _path_rename(path, '.txt'))
-
 def get_feat_path(path):
     return os.path.join(FEAT_DIR, _path_rename(path, '_feats.txt'))
 

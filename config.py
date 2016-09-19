@@ -18,12 +18,6 @@ FEAT_DIR  = 'feats'
 VECT_DIR  = 'vectors'
 
 # -------------------------------------------
-# Dependent file libraries.
-# -------------------------------------------
-XIGT_DIR  = '/NLP_TOOLS/uwcl/xigt/xigt-1.1.0/'
-ODIN_UTIL_DIR = '../odinutils'
-
-# -------------------------------------------
 # Where is Mallet
 # -------------------------------------------
 MALLET_DIR = '/Users/rgeorgi/Documents/code/mallet-2.0.7'

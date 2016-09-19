@@ -1,0 +1,349 @@
+﻿doc_id=2629.tetml page=1 block_id=1-1 bbox=0,0,0,0 0 0
+
+doc_id=2629.tetml page=1 block_id=1-2 bbox=56.6,723.2,437.9,773.1 1 2
+line=1  tag=O fonts=F0-25.92:From pronouns to agreement:
+line=2  tag=O fonts=F0-19.92:diachrony and typology of pronominal clitics
+
+doc_id=2629.tetml page=1 block_id=1-3 bbox=56.6,652.4,352.3,692.0 3 5
+line=3  tag=O fonts=F0-12.0:Michael Cysouw
+line=4  tag=O fonts=F1-12.0:Max Planck Institute for Evolutionary Anthropology, Leipzig
+line=5  tag=O fonts=F1-12.0:21 September 2004
+
+doc_id=2629.tetml page=1 block_id=1-4 bbox=56.6,205.0,538.2,621.9 6 27
+line=6  tag=O   fonts=F0-12.0,F1-12.0                     :(1)   Northern Talyshi (Northwest Iranian, Indo-European; Azerbaijan)
+line=7  tag=O   fonts=F1-12.0                             :      (Schulze 2000: 35 ex. 25a, 37 ex. 28, 55 ex. 80, 53, ex. 72f)
+line=8  tag=O   fonts=F0-12.0                             :      Floating clitics:
+line=9  tag=O   fonts=F1-12.0                             :      Ergative enclitic person marker can occur on the verb, see (a), or on a preverbal nominal part
+line=10  tag=O   fonts=F1-12.0                            :      of complex predicates, see (b), but the most commonly on the preverbal element, marking
+line=11  tag=O   fonts=F1-12.0                            :      focus on this element, see the question-answer pair (c, d). Incidentally, the clitic is also found
+line=12  tag=O   fonts=F1-12.0                            :      on the first element of the clause, see (e).
+line=13  tag=L lang_name=Northern Talyshi lang_code=tly span_id=s0 fonts=F1-12.0,F2-12.0:      a.    av-on         m-ni-s        vogand-son-e
+line=14  tag=G lang_name=Northern Talyshi lang_code=tly span_id=s0 fonts=F1-12.0,F1-9.36:           3_SG.PRON-_PL  1_SG.PRON-_ACC  send-3_PL-_AUX
+line=15  tag=T lang_name=Northern Talyshi lang_code=tly span_id=s0 fonts=F1-12.0        :           ‘They sent me.’
+line=16  tag=L lang_name=Northern Talyshi lang_code=tly span_id=s1 fonts=F1-12.0,F2-12.0:      b.    t        m-ni         kono   bagam-   kard-e
+line=17  tag=G lang_name=Northern Talyshi lang_code=tly span_id=s1 fonts=F1-12.0,F1-9.36:           2_SG.PRON 1_SG.PRON-_ACCwhere   love-2_SG   make-_AUX
+line=18  tag=T lang_name=Northern Talyshi lang_code=tly span_id=s1 fonts=F1-12.0        :           ‘Where did you fall in love with me?’
+line=19  tag=L lang_name=Northern Talyshi lang_code=tly span_id=s2 fonts=F1-12.0,F2-12.0:      c.    de            cic-       epist-a?
+line=20  tag=G lang_name=Northern Talyshi lang_code=tly span_id=s2 fonts=F1-12.0,F1-9.36:           2_SG.PRON     what-2_SG  tie up-_PERF
+line=21  tag=T lang_name=Northern Talyshi lang_code=tly span_id=s2 fonts=F1-12.0        :           ‘What did you tie up?’
+line=22  tag=L lang_name=Northern Talyshi lang_code=tly span_id=s3 fonts=F1-12.0,F2-12.0:      d.    cay           lng-on-m   epst-a
+line=23  tag=G lang_name=Northern Talyshi lang_code=tly span_id=s3 fonts=F1-12.0,F1-9.36:           3_SG.POSS     leg-_PL-1_SG    tie up-_PERF
+line=24  tag=T lang_name=Northern Talyshi lang_code=tly span_id=s3 fonts=F1-12.0        :           ‘I tied up his leg.’
+line=25  tag=L lang_name=Northern Talyshi lang_code=tly span_id=s4 fonts=F1-12.0,F2-12.0:      e.    albahal-m       tifang   ba   po       pekrn-i
+line=26  tag=G lang_name=Northern Talyshi lang_code=tly span_id=s4 fonts=F1-12.0        :           this moment-1_SG  rifle    to    down     take up-_AOR
+line=27  tag=T lang_name=Northern Talyshi lang_code=tly span_id=s4 fonts=F1-12.0        :           ‘In this moment I took up the rifle from below.’
+
+doc_id=2629.tetml page=1 block_id=1-5 bbox=56.6,64.4,520.6,172.9 28 34
+line=28  tag=O fonts=F0-12.0,F1-12.0:(2)   Konjo (South Sulawesi, Austronesian; Indonesia)
+line=29  tag=O fonts=F1-12.0        :      (Friberg 1996: 141-2 exs. 10-12, 151 ex. 47)
+line=30  tag=O fonts=F0-12.0        :      Non-obligatory affixes:
+line=31  tag=O fonts=F1-12.0        :      Obligitory cross-reference between verb and following noun phrases, see (a). In contrast,
+line=32  tag=O fonts=F1-12.0        :      topicalised noun phrases in preverbal position do not get cross-reference, see (b, c). A
+line=33  tag=O fonts=F1-12.0        :      preposed element with cross-reference on the verb is possible, though only if it is ‘outside’
+line=34  tag=O fonts=F1-12.0        :      the regular sentence structure, see (d).
+
+doc_id=2629.tetml page=2 block_id=2-1 bbox=0,0,0,0 0 0
+
+doc_id=2629.tetml page=2 block_id=2-2 bbox=85.0,636.3,303.0,772.4 35 42
+line=35  tag=L lang_name=Konjo lang_code=kjc span_id=s5 fonts=F1-12.0,F2-12.0        :a.    na-kanre-i     Amir  loka-ku
+line=36  tag=G lang_name=Konjo lang_code=kjc span_id=s5 fonts=F0-9.36,F1-12.0,F1-9.36:     3_ERG-eat-3_ABS NAME  banana-1_POSS
+line=37  tag=T lang_name=Konjo lang_code=kjc span_id=s5 fonts=F1-12.0                :     ‘Amir ate my banana.’
+line=38  tag=L lang_name=Konjo lang_code=kjc span_id=s6 fonts=F1-12.0,F2-12.0        :b.    Amir    ang-kanre-i   loka-ku
+line=39  tag=G lang_name=Konjo lang_code=kjc span_id=s6 fonts=F1-12.0,F1-9.36        :     NAME   VOICE-eat-3_ABS banana-1_POSS
+line=40  tag=T lang_name=Konjo lang_code=kjc span_id=s6 fonts=F1-12.0                :     ‘(It is) Amir (who) ate my banana.’
+line=41  tag=L lang_name=Konjo lang_code=kjc span_id=s7 fonts=F1-12.0,F2-12.0        :c.    lokaku         na-kanre  (Amir)
+line=42  tag=G lang_name=Konjo lang_code=kjc span_id=s7 fonts=F1-12.0,F1-9.36        :     banana-1_POSS             NAME
+
+doc_id=2629.tetml page=2 block_id=2-3 bbox=85.0,581.1,395.6,648.3 43 46
+line=43  tag=G lang_name=Konjo lang_code=kjc span_id=s7 fonts=F1-12.0        :                    3_ERG-eat
+line=44  tag=T lang_name=Konjo lang_code=kjc  span_id=s7 fonts=F1-12.0                            :     ‘(It was) my banana he (Amir) ate.’
+line=45  tag=L lang_name=Konjo lang_code=kjc span_id=s8 fonts=F1-12.0,F2-12.0:d.    manna     Baco’    ,           suang-a    na-tulung
+line=46  tag=G lang_name=Konjo lang_code=kjc span_id=s8 fonts=F1-12.0        :     even                                       3_ERG-help
+
+doc_id=2629.tetml page=2 block_id=2-4 bbox=113.3,567.2,336.4,590.5 47 48
+line=47  tag=G lang_name=Konjo lang_code=kjc span_id=s8 fonts=F1-12.0,F1-9.36:          NAME    BREAK      often-1_ABS
+line=48  tag=T   fonts=F1-12.0     span_id=s8                       :‘Even Baco’, he often helps me.’
+
+doc_id=2629.tetml page=2 block_id=2-5 bbox=56.6,480.8,356.9,534.6 49 51
+line=49  tag=O fonts=F0-12.0,F1-12.0:(3)   Lotuho (Southern Nilotic, Nilo-Saharan; Sudan)
+line=50  tag=O fonts=F1-12.0        :     (Tucker & Bryan 1966, 469-70; Muratori 1938: 72, 174)
+line=51  tag=O fonts=F0-12.0        :     Subject suffixes and independent pronouns identical:
+
+doc_id=2629.tetml page=2 block_id=2-6 bbox=90.5,360.8,175.2,402.8 52 54
+line=52  tag=O fonts=F1-12.0,F1-9.36,F7-12.0:                 @1 PL         xçxçI
+line=53  tag=O fonts=F1-12.0,F1-9.36,F7-12.0:               @  @ @2 PL         ItaI
+line=54  tag=O fonts=F1-12.0,F1-9.36,F7-12.0:               $  $3 PL         IsI
+
+doc_id=2629.tetml page=2 block_id=2-7 bbox=90.5,436.4,233.8,463.8 55 56
+line=55  tag=O fonts=F1-12.0        :           Pronoun   Suffix
+line=56  tag=O fonts=F1-12.0,F1-9.36:1 SG       (n)ánI
+
+doc_id=2629.tetml page=2 block_id=2-8 bbox=90.5,421.3,246.4,447.2 57 58
+line=57  tag=O fonts=F7-10.8        :                      …-_nE, nI
+line=58  tag=O fonts=F1-12.0,F1-9.36:2 SG       íyé
+
+doc_id=2629.tetml page=2 block_id=2-9 bbox=90.5,406.4,228.3,432.1 59 60
+line=59  tag=O fonts=F1-12.0        :                      …-_iE
+line=60  tag=O fonts=F1-12.0,F1-9.36:3 SG       ínyí
+
+doc_id=2629.tetml page=2 block_id=2-10 bbox=85.0,120.6,534.5,417.2 61 77
+line=61  tag=O   fonts=F7-10.8                                     :                       …-_InyI
+line=62  tag=O   fonts=F7-10.8                                     :                       …-_xçxçI
+line=63  tag=O   fonts=F7-10.8                                     :                       …-_tai
+line=64  tag=O   fonts=F7-10.8                                     :                       …-_IsI
+line=65  tag=O   fonts=F1-12.0,F2-12.0                             :If the independent pronoun is used for emphasis, this independent pronoun precedes the verb,
+line=66  tag=O   fonts=F1-12.0,F2-12.0                             :and the subject suffix is not used. This complementary distribution of independent pronoun
+line=67  tag=O   fonts=F1-12.0                                     :and suffixal pronoun indicates recent cliticization of the independent pronoun. In the other
+line=68  tag=O   fonts=F1-12.0                                     :Nilotic languages, that are regularly VSO (i.e. all except Bari), the independent pronoun
+line=69  tag=O   fonts=F1-12.0,F2-12.0                             :follows the verb for emphasis. Maybe this emphatic construction with the pronoun following
+line=70  tag=O   fonts=F1-12.0                                     :has become unmarked in Lotuho, leading to an eventual cliticization. (Note: The occurrence
+line=71  tag=O   fonts=F1-12.0                                     :of a pronominal suffix leads to the unusual fact that the same referent is refered to twice on
+line=72  tag=O   fonts=F1-12.0                                     :the same predicate, as there is also a subject prefix.)
+line=73  tag=L lang_name=Lotuho lang_code=lot span_id=s10 fonts=F1-12.0,F2-12.0,F7-12.0:a.    nanI        á-∫waxa
+line=74  tag=G lang_name=Lotuho lang_code=lot span_id=s10 fonts=F1-12.0,F1-9.36        :      1_SG.PRON   1_SG-dig
+line=75  tag=T lang_name=Lotuho lang_code=lot span_id=s10 fonts=F1-12.0                :      ‘I (emphatic) am digging’
+line=76  tag=L lang_name=Lotuho lang_code=lot  span_id=s10p1 fonts=F1-12.0,F7-12.0                             :b.    á-∫waxa-nI
+line=77  tag=G-T lang_name=Lotuho lang_code=lot span_id=s10p2  fonts=F1-12.0                                     :      1_SG-dig-1_SG‘I (normal) am digging.
+
+doc_id=2629.tetml page=3 block_id=3-1 bbox=0,0,0,0 0 0
+
+doc_id=2629.tetml page=3 block_id=3-2 bbox=56.6,518.2,519.0,785.4 78 92
+line=78  tag=O   fonts=F0-12.0,F1-12.0                                     :(4)   Cypriot Greek (Greek, Indo-European; Cyprus)
+line=79  tag=O   fonts=F1-12.0                                             :     (Terzi 1999)
+line=80  tag=O   fonts=F0-12.0                                             :     Unmarked position of reduced pronoun is postverbal (a, b), though preverbal/second
+line=81  tag=O   fonts=F0-12.0                                             :     position occurs:
+line=82  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after factive complementizer pu
+line=83  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after subjunctive marker na
+line=84  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after sentential negation en, see (c)
+line=85  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after wh-pronouns pjos “who”, ti “what”, see (d)
+line=86  tag=O   fonts=F1-12.0                                             :     – after focused initial constituents, see (e)
+line=87  tag=L lang_name=Greek lang_code=ell span_id=s11 fonts=F1-12.0,F2-12.0,F5-12.0        :     a.    poli     anthropi   panda    kamnoun  to    sosta
+line=88  tag=G lang_name=Greek lang_code=ell span_id=s11 fonts=F0-12.0,F1-12.0,F1-9.36        :           many   people     always   do.3_PL     it    correctly
+line=89  tag=T lang_name=Greek lang_code=ell span_id=s11 fonts=F1-12.0                        :           ‘Many people always do it correctly.’
+line=90  tag=L lang_name=Greek lang_code=ell span_id=s12 fonts=F1-12.0,F2-12.0,F5-12.0        :     b.    touto   to     vivlio   dose       tou!
+line=91  tag=G lang_name=Greek lang_code=ell span_id=s12 fonts=F0-12.0,F0-9.36,F1-12.0,F1-9.36:           DEM    ART   book    give.IMP   3_SG.DAT
+line=92  tag=T lang_name=Greek lang_code=ell span_id=s12 fonts=F1-12.0                        :           ‘Give this book to him!’
+
+doc_id=2629.tetml page=3 block_id=3-3 bbox=85.0,353.4,412.8,500.2 93 100
+line=93  tag=L lang_name=Greek lang_code=ell span_id=s13 fonts=F1-12.0,F2-12.0,F5-12.0        :c.    en      ton         iksero
+line=94  tag=G lang_name=Greek lang_code=ell span_id=s13 fonts=F0-12.0,F0-9.36,F1-12.0,F1-9.36:     NEG    3_SG.ACC    know.1_SG
+line=95  tag=T lang_name=Greek lang_code=ell span_id=s13 fonts=F1-12.0                        :     ‘I don’t know him.’
+line=96  tag=L lang_name=Greek lang_code=ell span_id=s14 fonts=F1-12.0,F2-12.0,F5-12.0        :d.    pjos    ton         idhe?
+line=97  tag=G lang_name=Greek lang_code=ell span_id=s14 fonts=F0-12.0,F0-9.36,F1-12.0        :     who    3_SG.ACC    saw
+line=98  tag=T lang_name=Greek lang_code=ell span_id=s14 fonts=F1-12.0                        :     ‘Who saw him?’
+line=99  tag=L lang_name=Greek lang_code=ell span_id=s15  fonts=F1-12.0,F2-12.0,F5-12.0                             :e.    tuto    to     vivlio   su        edhoken   i      Maria
+line=100  tag=G lang_name=Greek lang_code=ell span_id=s15 fonts=F1-9.36                       :     DEM    ART                                ART
+
+doc_id=2629.tetml page=3 block_id=3-4 bbox=113.3,338.2,408.8,365.4 101 102
+line=101  tag=G lang_name=Greek lang_code=ell span_id=s15 fonts=F0-12.0,F0-9.36,F1-12.0,F1-9.36:              book   2_SG.ACC   gave.3_SG         name
+line=102  tag=T lang_name=Greek lang_code=ell span_id=s15 fonts=F1-12.0,F1-9.36                :‘THIS BOOK Mary gave to you.’
+
+doc_id=2629.tetml page=3 block_id=3-5 bbox=56.6,68.2,493.0,305.4 103 116
+line=103  tag=O   fonts=F0-12.0,F1-12.0                                     :(5)   European Portuguese (Romance, Indo-European; Portugal)
+line=104  tag=O   fonts=F1-12.0                                             :     (Madeira 1992; Barbosa 1996; Rouveret 1999)
+line=105  tag=O   fonts=F0-12.0                                             :     Unmarked position of clitics is postverbal, though preverbal:
+line=106  tag=O   fonts=F1-12.0,F2-12.0                                     :     – in embedded clauses: after complementizer que “that”
+line=107  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after indefinite subjects: ninguém “no one”, alguém “someone, see (c)
+line=108  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after quantified subject: todos [X] “all X”, poucos [X] “few X”, see (b)
+line=109  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after NPs with focus particle: só [X] “only X”, até [X], “even X”, see (d)
+line=110  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after preverbal adverbials : já “already”, nunca “never”
+line=111  tag=O   fonts=F1-12.0,F2-12.0                                     :     – with sentential negation não
+line=112  tag=O   fonts=F1-12.0                                             :     – after focussed constituents, see (d)
+line=113  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after initial WH-pronouns: quem “who”, onde “where”, que “which”, o que “what”
+line=114  tag=L lang_name=Portuguese lang_code=por span_id=s16 fonts=F1-12.0,F2-12.0                :     a.    os     rapazes  ajudaram-me
+line=115  tag=G lang_name=Portuguese lang_code=por span_id=s16 fonts=F0-12.0,F0-9.36,F1-12.0,F1-9.36:           ART   boys     help.3_PL.PAST-1_SG.ACC
+line=116  tag=T lang_name=Portuguese lang_code=por span_id=s16 fonts=F1-12.0                        :           ‘The boys helped me.’
+
+doc_id=2629.tetml page=4 block_id=4-1 bbox=0,0,0,0 0 0
+
+doc_id=2629.tetml page=4 block_id=4-2 bbox=85.0,743.4,371.5,770.2 117 118
+line=117  tag=L lang_name=Portuguese lang_code=por span_id=s17 fonts=F1-12.0,F2-12.0,F5-12.0        :b.    todos  os      rapazes  me         ajudaram
+line=118  tag=G lang_name=Portuguese lang_code=por span_id=s17 fonts=F0-12.0,F0-9.36,F1-12.0,F1-9.36:     all             boys     1_SG.ACC    help.3_PL.PAST
+
+doc_id=2629.tetml page=4 block_id=4-3 bbox=85.0,623.4,431.4,752.7 119 125
+line=119  tag=G lang_name=Portuguese lang_code=por span_id=s17 fonts=F1-9.36                        :            ART
+line=120  tag=T lang_name=Portuguese lang_code=por span_id=s17 fonts=F1-12.0                                             :     ‘All the boys helped me.’
+line=121  tag=L lang_name=Portuguese lang_code=por span_id=s18 fonts=F1-12.0,F2-12.0,F5-12.0        :c.    alguém    me          ajudou
+line=122  tag=G lang_name=Portuguese lang_code=por span_id=s18 fonts=F0-12.0,F0-9.36,F1-12.0,F1-9.36:     someone   1_SG.ACC     help.3_SG.PAST
+line=123  tag=T lang_name=Portuguese lang_code=por span_id=s18 fonts=F1-12.0                        :     ‘Someone helped me.’
+line=124  tag=L lang_name=Portuguese lang_code=por span_id=s19 fonts=F1-12.0,F2-12.0,F5-12.0        :d.    até    o     Pedro    me      deu           uma   prenda
+line=125  tag=G lang_name=Portuguese lang_code=por span_id=s19 fonts=F0-12.0,F0-9.36,F1-12.0,F1-9.36:     even         name    1_SG.DAT  give.3_SG.PAST        present
+
+doc_id=2629.tetml page=4 block_id=4-4 bbox=113.3,608.2,380.2,632.7 126 127
+line=126  tag=G lang_name=Portuguese lang_code=por span_id=s19 fonts=F1-9.36:      DEM                                 ART
+line=127  tag=T lang_name=Portuguese lang_code=por span_id=s19  fonts=F1-12.0,F1-9.36             :‘EVEN PEDRO gave me a present.’
+
+doc_id=2629.tetml page=4 block_id=4-5 bbox=56.6,521.8,479.5,578.7 128 130
+line=128  tag=O fonts=F0-12.0,F1-12.0:(6)   Ngumpin languages (North-central Australia)
+line=129  tag=O fonts=F1-12.0        :     A:   Original pattern was second position cliticization
+line=130  tag=O fonts=F1-12.0        :     B:   Innovation 1: pronominal clitics are added to a base (‘auxiliary’) forming an
+
+doc_id=2629.tetml page=4 block_id=4-6 bbox=85.0,477.0,521.2,489.0 131 131
+line=131  tag=O fonts=F1-12.0:C:   Innovation 2: pronominal clitics are added to verb, independent of the position of the
+
+doc_id=2629.tetml page=4 block_id=4-7 bbox=85.0,370.4,521.2,519.0 132 139
+line=132  tag=O fonts=F1-12.0:      independent word. This word occurs in various positions, though it appears to favour
+line=133  tag=O fonts=F1-12.0:      first or second position.
+line=134  tag=O fonts=F1-12.0:      verb in the sentence
+line=135  tag=O fonts=F1-12.0:Innovation 1:    clitics on auxiliary   clitics on first constiuent
+line=136  tag=O fonts=F1-12.0:Bilinara         never                always on first consituent
+line=137  tag=O fonts=F1-12.0:Ngarinyman     never                negation, focus, ...
+line=138  tag=O fonts=F1-12.0:Djaru, Gurindji  regularly             negation, WH-pronouns, focus, ...
+line=139  tag=O fonts=F1-12.0:Mudbara        (almost) always      (very rarely first constituent)
+
+doc_id=2629.tetml page=4 block_id=4-8 bbox=56.6,173.8,452.4,351.0 140 149
+line=140  tag=O   fonts=F0-12.0,F1-12.0                                     :(7)   Djaru (Ngumpin, Pama-Nyungan; Australia)
+line=141  tag=O   fonts=F1-12.0                                             :     (Tsunoda 1981: 125, 256)
+line=142  tag=O   fonts=F0-12.0                                             :     Conservative cliticization on first constituent (not on auxiliary):
+line=143  tag=O   fonts=F1-12.0,F3-12.0                                     :     – after conjunction aa
+line=144  tag=O   fonts=F1-12.0,F9-12.0                                     :     – after modal adverb ara “possible”
+line=145  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after negation wagura, see example below
+line=146  tag=O   fonts=F1-12.0                                             :     – after WH-pronouns
+line=147  tag=O   fonts=F1-12.0                                             :     – after focused NP (only rarely found)
+line=148  tag=L lang_name=Djaru lang_code=ddj span_id=s20 fonts=F2-12.0                        :          wagura-lija     ara-man-inura    ura    gaarara   ganimbara
+line=149  tag=G lang_name=Djaru lang_code=ddj span_id=s20 fonts=F0-12.0,F0-9.36,F1-12.0,F1-9.36:          NEG-1_DU.EXCL                     camp   east       down creek
+
+doc_id=2629.tetml page=4 block_id=4-9 bbox=113.3,159.0,351.9,183.2 150 151
+line=150  tag=G lang_name=Djaru lang_code=ddj span_id=s20 fonts=F1-9.36:                know-_PAST-_NARR
+line=151  tag=T lang_name=Djaru lang_code=ddj span_id=s20  fonts=F1-12.0                     :‘We did not know the camp east down the creek.’
+
+doc_id=2629.tetml page=5 block_id=5-1 bbox=0,0,0,0 0 0
+
+doc_id=2629.tetml page=5 block_id=5-2 bbox=56.6,278.0,507.6,785.4 152 179
+line=152  tag=O   fonts=F0-12.0,F1-12.0                                     :(8)   Gurindji (Ngumpin, Pama-Nyungan; Australia)
+line=153  tag=O   fonts=F1-12.0                                             :     (McConvell 1996: 308-309, 318-319)
+line=154  tag=O   fonts=F0-12.0                                             :     Conservative cliticization on first constituent (not on auxiliary):
+line=155  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after subordinator/complementizer nyamu
+line=156  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after sentential negation kula
+line=157  tag=O   fonts=F1-12.0                                             :     – after initial wh-pronouns
+line=158  tag=O   fonts=F1-12.0                                             :     – after contrastive focus on first constituent, see (b)
+line=159  tag=O   fonts=F1-12.0                                             :     – in swearing (not-literal conservative utterances)
+line=160  tag=L lang_name=Gurindji lang_code=gue span_id=s21 fonts=F1-12.0,F2-12.0,F5-12.0        :     a.    yirrap-ma      ngu=rna-yina      parik   wanyja    VRD-la
+line=161  tag=G lang_name=Gurindji lang_code=gue span_id=s21 fonts=F0-12.0,F0-9.36,F1-12.0,F1-9.36:           one mob-_TOP   AUX=1_SG.S-3_PL.O   leave   leave.PAST VRD-_LOC
+line=162  tag=T lang_name=Gurindji lang_code=gue span_id=s21 fonts=F1-12.0                        :           ‘One lot I left at VRD.’
+line=163  tag=L lang_name=Gurindji lang_code=gue span_id=s22 fonts=F1-12.0,F2-12.0,F5-12.0        :     b.    yirrap-ma=rna-yina       wart    ka-nya     murla-ngkurra
+line=164  tag=G lang_name=Gurindji lang_code=gue span_id=s22 fonts=F0-12.0,F0-9.36,F1-12.0        :           one mob-_TOP=1_SG.S-3_PL.O back    take-_PAST  here-all
+line=165  tag=T lang_name=Gurindji lang_code=gue span_id=s22 fonts=F1-12.0,F1-9.36                :           ‘THE OTHER LOT I brought back here.’
+line=166  tag=O   fonts=F0-12.0,F1-12.0                                     :(9)   Ngarinyman (Ngumpin, Pama-Nyungan; Australia)
+line=167  tag=O   fonts=F1-12.0                                             :     (My analysis of fieldnotes kindly made available to me by E. Schulze-Berndt)
+line=168  tag=O   fonts=F0-12.0                                             :     Conservative cliticization on first constituent in the following situations. Otherwise
+line=169  tag=O   fonts=F0-12.0                                             :     enclitic to the verb:
+line=170  tag=O   fonts=F1-12.0                                             :     – after negations
+line=171  tag=O   fonts=F1-12.0                                             :     – after initial full pronouns
+line=172  tag=O   fonts=F1-12.0                                             :     – after initial demonstratives
+line=173  tag=O   fonts=F1-12.0,F1-9.36                                     :     – after focussed NP (only rarely found)
+line=174  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after modal adverb ngaja ‘maybe’
+line=175  tag=O   fonts=F1-12.0,F2-12.0                                     :     – after dumaji ‘too much’ (a Kriol word)
+line=176  tag=O   fonts=F1-12.0                                             :     Innovation 2:                  verb attracts clitics:
+line=177  tag=O   fonts=F1-12.0                                             :     Mudbara                      optional in imperative/hortative
+line=178  tag=O   fonts=F1-12.0                                             :     Bilinara, Djaru, Gurindji       always in imperative/hortative
+line=179  tag=O   fonts=F1-12.0                                             :     Malngin (Western Gurindji)    in imperative/hortative, future and past irrealis
+
+doc_id=2629.tetml page=5 block_id=5-3 bbox=56.6,69.0,339.0,258.6 180 189
+line=180  tag=M+LN lang_name=Mudbarra lang_code=mwd span_id=s23 fonts=F0-12.0,F1-12.0        :(10)  Mudbarra (Ngumpin, Pama-Nyungan; Australia)
+line=181  tag=M+AC lang_name=Mudbarra lang_code=mwd span_id=s23 fonts=F1-12.0                :     (McConvell 1980: 90)
+line=182  tag=L    lang_name=Mudbarra lang_code=mwd span_id=s23 fonts=F2-12.0                :           yali-ma    pupa-ma    wara   a-ka-li
+line=183  tag=G    lang_name=Mudbarra lang_code=mwd span_id=s23 fonts=F1-12.0                :           that-_TOP   fire-_TOP     care    see-_IMP-2_P
+line=184  tag=T    lang_name=Mudbarra lang_code=mwd span_id=s23 fonts=F1-12.0                :           ‘You lot watch out for that fire.’
+line=185  tag=M+LN lang_name=Mudbarra lang_code=gue span_id=s24 fonts=F0-12.0,F0-9.36,F1-12.0:(11)  M_ALNGIN (Ngumpin, Pama-Nyungan; Australia)
+line=186  tag=M+AC lang_name=Mudbarra lang_code=gue span_id=s24 fonts=F1-12.0                :     (McConvell 1980: 92)
+line=187  tag=L    lang_name=Mudbarra lang_code=gue span_id=s24 fonts=F2-12.0,F3-12.0        :           kayira    yan-ku-lu-(a)
+line=188  tag=G    lang_name=Mudbarra lang_code=gue span_id=s24 fonts=F1-12.0,F1-9.36        :           north     go-_GUT-3_P-(DOUBT)
+line=189  tag=T    lang_name=Mudbarra lang_code=gue span_id=s24 fonts=F1-12.0                :           ‘They will (possibly) go north.’
+
+doc_id=2629.tetml page=6 block_id=6-1 bbox=0,0,0,0 0 0
+
+doc_id=2629.tetml page=6 block_id=6-2 bbox=56.6,608.2,284.9,785.4 190 199
+line=190  tag=M+LN    lang_name=Iranian lang_code=nyq span_id=s25 fonts=F0-12.0,F1-12.0:(12)  Southwestern Iranian, Indo-European
+line=191  tag=M+AC    lang_name=Iranian lang_code=nyq span_id=s25 fonts=F1-12.0        :     (M. Dabir Moghaddam 2004, handout)
+line=192  tag=M+LN+CN lang_name=Iranian lang_code=nyq span_id=s25 fonts=F0-12.0        :     Naini: preverbal enclitics
+line=193  tag=L       lang_name=Iranian lang_code=nyq span_id=s25 fonts=F2-12.0        :          me         kutab-om   iriy
+line=194  tag=G       lang_name=Iranian lang_code=nyq span_id=s25 fonts=F1-12.0,F1-9.36:          1_SG.PRON   book-1_SG   buy.PAST
+line=195  tag=T       lang_name=Iranian lang_code=nyq span_id=s25 fonts=F1-12.0        :          ‘I bought the book.’
+line=196  tag=M+LN+CN lang_name=Lari lang_code=lrl span_id=s26 fonts=F0-12.0        :     Lari: verbal prefixes
+line=197  tag=L       lang_name=Lari lang_code=lrl span_id=s26 fonts=F2-12.0        :          mæ       ketab   om-se
+line=198  tag=G       lang_name=Lari lang_code=lrl span_id=s26 fonts=F1-12.0,F1-9.36:          1_SG.PRON  book   1_SG-buy.PAST
+line=199  tag=T       lang_name=Lari lang_code=lrl span_id=s26 fonts=F1-12.0        :          ‘I bought the book.’
+
+doc_id=2629.tetml page=6 block_id=6-3 bbox=56.6,468.8,478.8,577.5 200 205
+line=200  tag=O   fonts=F0-12.0,F1-12.0                     :(13)  Padoe (Bungku-Tolaki, Austronesian; Indonesia)
+line=201  tag=O   fonts=F1-12.0                             :      (Vuorinen 1995: 107 ex. 54, 109 ex. 66)
+line=202  tag=O   fonts=F1-12.0,F2-12.0                     :      The ergative person markers are found as prefixes, but as enclitics after initial ako
+line=203  tag=O   fonts=F1-12.0,F2-12.0                     :      (‘because’), ba (‘if’, ‘when’), ka (‘so that’), la (negation), aambo (‘not yet’)
+line=204  tag=L lang_name=Padoe lang_code=pdo span_id=s27 fonts=F1-12.0,F2-12.0:      a.    umari   sie   ku-nahu-o
+line=205  tag=G lang_name=Padoe lang_code=pdo span_id=s27 fonts=F1-12.0        :           finish   that
+
+doc_id=2629.tetml page=6 block_id=6-4 bbox=85.0,413.6,261.6,478.2 206 209
+line=206  tag=G lang_name=Padoe lang_code=pdo span_id=s27 fonts=F1-12.0                :                    1_SG-cook-3_SG
+line=207  tag=T lang_name=Padoe lang_code=pdo span_id=s27  fonts=F1-12.0                                     :      ‘After that I cooked it.’
+line=208  tag=L lang_name=Padoe lang_code=pdo span_id=s28 fonts=F1-12.0,F2-12.0,F5-12.0:b.    la-ku     to’ori-o    name-no
+line=209  tag=G lang_name=Padoe lang_code=pdo span_id=s28 fonts=F1-12.0,F1-9.36        :      NEG-1_SG  know-3_SG
+
+doc_id=2629.tetml page=6 block_id=6-5 bbox=113.3,399.9,293.1,425.6 210 211
+line=210  tag=G lang_name=Padoe lang_code=pdo span_id=s28 fonts=F1-12.0,F1-9.36:                    name-3_SG.POSS
+line=211  tag=T lang_name=Padoe lang_code=pdo span_id=s28  fonts=F1-12.0                             :‘I do not know his name.’
+
+doc_id=2629.tetml page=6 block_id=6-6 bbox=56.6,68.7,537.6,370.4 212 232
+line=212  tag=O fonts=F0-12.0        :References
+line=213  tag=O fonts=F1-12.0        :Barbosa, Pilar (1996). Clitic placement in European Portuguese and the position of subjects. In:
+line=214  tag=O fonts=F1-12.0,F2-12.0:   Aaron L. Halpern & Arnold M. Zwicky (eds.) Approaching Second: Second Position Clitics and
+line=215  tag=O fonts=F1-12.0,F2-12.0:   Related Phenomena, pp. 1-40. (CSLI Lecture Notes; 61). Stanford: Center for the study of
+line=216  tag=O fonts=F1-12.0        :   Language and Information.
+line=217  tag=O fonts=F1-12.0,F2-12.0:Bybee, Joan (1985). Morphology: A Study in the relation between Meaning and Form. (Typological
+line=218  tag=O fonts=F1-12.0        :   Studies in Language; 9). Amsterdam: Benjamins.
+line=219  tag=O fonts=F1-12.0        :Bybee, Joan, William Pagliuca & Revere D. Perkins (1990). On the asymmetries in the affixation of
+line=220  tag=O fonts=F1-12.0,F2-12.0:   grammatical material. In: William Croft (ed.) Studies in Typology and Diachrony, pp. 1-42.
+line=221  tag=O fonts=F1-12.0        :   (Typological Studies in Language; 20). Amsterdam: Benjamins.
+line=222  tag=O fonts=F1-12.0,F2-12.0:— (1991). Back to the future. In: Elizabeth Closs Traugott & Bernd Heine (eds.) Approaches to
+line=223  tag=O fonts=F1-12.0,F2-12.0:   Grammaticalization. Vol. 2, pp. 17-58. (Typological Studies in Language; 19). Amsterdam:
+line=224  tag=O fonts=F1-12.0        :   Benjamins.
+line=225  tag=O fonts=F1-12.0,F2-12.0:Cysouw, Michael (2003). The Paradigmatic Structure of Person Marking. (Oxford Studies in
+line=226  tag=O fonts=F1-12.0        :   Typology and Linguistic Theory). Oxford: Oxford University Press.
+line=227  tag=O fonts=F1-12.0        :— (2004a). “A history of Munda person marking”. Unpublished manuscript.
+line=228  tag=O fonts=F1-12.0        :— (2004b). “Morphology in the wrong place: a survey of preposed enclitics”. Unpublished
+line=229  tag=O fonts=F1-12.0        :   manuscript.
+line=230  tag=O fonts=F1-12.0,F2-12.0:Friberg, Barbara (1996). Konjo’s Peripatetic Person Markers. In: Hein Steinhauer (ed.) Papers in
+line=231  tag=O fonts=F1-12.0,F2-12.0:   Austronesian Linguistics. Vol. 3, pp. 137-71. (Pacific Linguistics; A 84). Canberra: Australian
+line=232  tag=O fonts=F1-12.0        :   National University.
+
+doc_id=2629.tetml page=7 block_id=7-1 bbox=0,0,0,0 0 0
+
+doc_id=2629.tetml page=7 block_id=7-2 bbox=56.6,291.2,537.7,786.3 233 268
+line=233  tag=O fonts=F1-12.0,F2-12.0:Givón, T. (1976). Topic, Pronoun and Grammatical Agreement. In: Charles N. Li (ed.) Subject and
+line=234  tag=O fonts=F1-12.0,F2-12.0:   Topic, pp. 149-88. New York: Academic Press.
+line=235  tag=O fonts=F1-12.0,F2-12.0:Kroeber, Paul D. (1999). The Salish Language Family: Reconstructing Syntax. (Studies in the
+line=236  tag=O fonts=F1-12.0        :   Anthropology of North American Indians). Lincoln: University of Nebraska Press.
+line=237  tag=O fonts=F1-12.0,F2-12.0:Madeira, Ana (1992). On clitic placement in European Portuguese. UCL working papers in
+line=238  tag=O fonts=F1-12.0,F2-12.0:   linguistics 4: 95-122.
+line=239  tag=O fonts=F1-12.0        :Mcconvell, Patrick (1980). Hierarchical variation in pronominal clitics attachment in the Eastern
+line=240  tag=O fonts=F1-12.0,F2-12.0:   Ngumpin languages. In: Bruce Rigsby & Peter Sutton (eds.) Papers in Australian Linguistics.
+line=241  tag=O fonts=F1-12.0        :   Vol. 13: Contributions to Australian Linguistics, pp. 31-117. (Pacific Linguistics; A 59).
+line=242  tag=O fonts=F1-12.0        :   Canberra: Australian National University.
+line=243  tag=O fonts=F1-12.0        :— (1996). The function of split-wackernagel clitic systems: Pronominal clitics in the Ngumpin
+line=244  tag=O fonts=F1-12.0        :   languages (Pama-Nyungan, Northern Australia). In: Aaron L. Halpern & Arnold M. Zwicky
+line=245  tag=O fonts=F1-12.0,F2-12.0:   (eds.) Approaching Second: Second Position Clitics and Related Phenomena, pp. 299-331.
+line=246  tag=O fonts=F1-12.0        :   (CSLI Lecture Notes; 61). Stanford: Center for the study of Language and Information.
+line=247  tag=O fonts=F1-12.0,F2-12.0:Muratori, P. Carlo (1938). Grammatica Lotuxo. Verona: Missioni Africane.
+line=248  tag=O fonts=F1-12.0        :Rouveret, Alain (1999). Clitics, subjects and tense in European Portuguese. In: Henk van Riemsdijk
+line=249  tag=O fonts=F1-12.0,F2-12.0:   (ed.) Clitics in the Languages of Europe, pp. 639-78. (Empirical Approaches to Language
+line=250  tag=O fonts=F1-12.0        :   Typology; Eurotyp 20-5). Berlin: Mouton de Gruyter.
+line=251  tag=O fonts=F1-12.0,F2-12.0:Schulze, Wolfgang (2000). Northern Talysh. (Languages of the World/Materials; 380). Munich:
+line=252  tag=O fonts=F1-12.0        :   Lincom.
+line=253  tag=O fonts=F1-12.0,F2-12.0:Siewierska, Anna (2004). Person. (Cambridge Textbooks in Linguistics). Cambridge: Cambridge
+line=254  tag=O fonts=F1-12.0        :   University Press.
+line=255  tag=O fonts=F1-12.0,F2-12.0:Steele, Susan (1977). Clisis and Diachrony. In: Charles N. Li (ed.) Mechanisms of Syntactic
+line=256  tag=O fonts=F1-12.0,F2-12.0:   Change, pp. 539-82. Austin, Tx.: University of Texas Press.
+line=257  tag=O fonts=F1-12.0        :— (1995). Clisis. In: Joachim Jacobs, Arnim von Stechow, Wolfgang Sternefeld & Theo
+line=258  tag=O fonts=F1-12.0,F2-12.0:   Vennemann (eds.) Syntax: ein internationales Handbuch zeitgenössischer Forschung. Vol. 2, pp.
+line=259  tag=O fonts=F1-12.0        :   1226-35. (Handbücher zur Sprach- und Kommunikationswissenschaft; 9). Berlin: De Gruyter.
+line=260  tag=O fonts=F1-12.0        :Terzi, Arhonto (1999). Cypriot Greek clitics and their positioning restrictions. In: Artemis
+line=261  tag=O fonts=F1-12.0,F2-12.0:   Alexiadou, Geoffrey Horrocks & Melita Stavrou (eds.) Studies in Greek Syntax, pp. 227-40.
+line=262  tag=O fonts=F1-12.0        :   (Studies in Natural Language and Linguistic Theory; 43). Dordrecht: Kluwer.
+line=263  tag=O fonts=F1-12.0,F2-12.0:Tsunoda, Tasaku (1981). The Djaru language of Kimberley, Western Australia. (Pacific
+line=264  tag=O fonts=F1-12.0        :   Linguistics; B 78). Canberra: Australian National University.
+line=265  tag=O fonts=F1-12.0,F2-12.0:Tucker, A. N. & M. A. Bryan (1966). Linguistic Analyses of the Non-Bantu Languages of North-
+line=266  tag=O fonts=F1-12.0,F2-12.0:   Eastern Africa. London: Oxford University Press.
+line=267  tag=O fonts=F1-12.0,F2-12.0:Vuorinen, Paula (1995). Person marking in Padoe. In: René van den Berg (ed.) Studies in Sulawesi
+line=268  tag=O fonts=F1-12.0,F2-12.0:   Linguistics. Vol. 4, pp. 97-121. (NUSA; 37). Jakarta: Universitas Atma Jaya.
+
+

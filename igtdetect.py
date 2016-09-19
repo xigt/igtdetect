@@ -495,19 +495,27 @@ def get_all_line_feats(featdict, lineno) -> dict:
     current line, as well as n-1 and n-2 lines, and n+1.
     """
 
+    # Always include the features for the current line.
     cur_feats = featdict[lineno]
-    prev_prev_feats = featdict.get(lineno - 2, {})
-    prev_feats = featdict.get(lineno - 1, {})
-    next_feats = featdict.get(lineno + 1, {})
-
     all_feats = copy(cur_feats)
 
-    for prev_key in prev_prev_feats.keys():
-        all_feats['prev_prev_' + prev_key] = prev_prev_feats[prev_key]
-    for prev_key in prev_feats.keys():
-        all_feats['prev_' + prev_key] = prev_feats[prev_key]
-    for next_key in next_feats.keys():
-        all_feats['next_' + next_key] = next_feats[next_key]
+    # Use the features for the line before the previous one (n-2)
+    if USE_PREV_PREV_LINE:
+        prev_prev_feats = featdict.get(lineno - 2, {})
+        for prev_key in prev_prev_feats.keys():
+            all_feats['prev_prev_' + prev_key] = prev_prev_feats[prev_key]
+
+    # Use the features for the previous line (n-1)
+    if USE_PREV_LINE:
+        prev_feats = featdict.get(lineno - 1, {})
+        for prev_key in prev_feats.keys():
+            all_feats['prev_' + prev_key] = prev_feats[prev_key]
+
+    # Use the features for the next line (n+1)
+    if USE_NEXT_LINE:
+        next_feats = featdict.get(lineno + 1, {})
+        for next_key in next_feats.keys():
+            all_feats['next_' + next_key] = next_feats[next_key]
 
     return all_feats
 
@@ -938,6 +946,13 @@ def combine_feat_files(pathlist, out_path=None):
 
 
 def train_classifier(filelist, class_path):
+    """
+    Train the classifier based on the input files in filelist.
+
+    :param filelist: List of files to train the classifier based upon.
+    :param class_path:
+    :return:
+    """
     # Get feature paths for all the input files.
     feat_paths = [get_feat_path(p) for p in filelist]
 
@@ -965,8 +980,11 @@ def train_classifier(filelist, class_path):
 def convert_to_vectors(path, prev_pipe_path=None, out_path=None):
     """
     Take an svm-light format file and return a temporary file
-    converted to vectors.
+    converted to the mallet format binary vectors.
     """
+
+    # If a desired output path is not specified, then
+    # create a temporary file.
     if not out_path:
         vector_f = NamedTemporaryFile('w', delete=False)
         vector_f.close()

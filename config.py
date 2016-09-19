@@ -142,11 +142,16 @@ T_HAS_YEAR = 'has_year'
 T_LOOKS_ENGLISH = 'looks_english'
 
 
+# =============================================================================
+# EDIT THIS SECTION
+# =============================================================================
+
 # -------------------------------------------
 # Now, to enable/disable a particular feature,
 # just comment out the line the feature is
 # contained on.
 # -------------------------------------------
+
 FREKI_FEATS = [
     F_IS_INDENTED            # Is the line in question indented more than usual?
     ,F_IS_FIRST_PAGE         # Is the line contained on the first page?
@@ -182,7 +187,15 @@ TEXT_FEATS = [
     ,T_HAS_YEAR # Is there a four-digit year (from 1800-20XX)
 ]
 
-
+# -------------------------------------------
+# These three features control whether the
+# features are included for the previous line,
+# the line before that (prev_prev), or the next
+# line.
+# -------------------------------------------
+USE_PREV_LINE = True
+USE_PREV_PREV_LINE = True
+USE_NEXT_LINE = True
 
 # =============================================================================
 # Regular Expressions

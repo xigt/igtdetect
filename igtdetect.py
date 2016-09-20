@@ -795,11 +795,6 @@ def oov_rate(wl: WordlistFile, line: Line):
             return oov_rate
 
 
-def looks_english(line: Line, lm: NgramDict):
-    lp = lm.mean_logprob_sent(line)
-    return lp > -5
-
-
 langs = set([])
 with open('langs.txt', 'r', encoding='utf-8') as f:
     for line in f:

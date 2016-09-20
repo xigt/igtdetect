@@ -12,10 +12,7 @@
 # -------------------------------------------
 
 # The directory in which to place the human readable feature files.
-FEAT_DIR  = 'feats'
-
-# The directory in which to place the binary vector files for mallet.
-VECT_DIR  = 'vectors'
+FEAT_DIR  = './feats'
 
 # -------------------------------------------
 # Where is Mallet
@@ -133,7 +130,6 @@ T_HAS_ACC = 'has_acc_lat'
 T_HAS_DIA = 'has_dia'
 T_HAS_UNI = 'has_uni'
 T_HAS_YEAR = 'has_year'
-T_LOOKS_ENGLISH = 'looks_english'
 
 
 # =============================================================================

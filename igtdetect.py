@@ -528,8 +528,11 @@ def get_feat_path(path):
     return os.path.join(FEAT_DIR, _path_rename(path, '_feats.txt'))
 
 
-def get_vect_path(path):
-    return os.path.join(VECT_DIR, _path_rename(path, '.vector'))
+def get_classifications_path(path):
+    return os.path.join(DEBUG_DIR, _path_rename(path, '_classifications.txt'))
+
+def get_weight_path(path):
+    return os.path.join(DEBUG_DIR, _path_rename(path, '_weights.txt'))
 
 
 # -------------------------------------------
@@ -1262,7 +1265,20 @@ def classify_docs(filelist, class_path, outdir, no_eval):
 
         last_block = None  # Keep track of which block the last block is so we can write out
 
+        # This file will contain the raw labelings from the classifier.
+        if DEBUG_ON:
+            classification_f = open(get_classifications_path(path), 'w')
+
         for lineno, classification in zip(sorted(fr.featdict.keys()), classifications):
+
+            # Write the line number and classification probabilities to the debug file.
+            if DEBUG_ON:
+                classification_f.write('{}:'.format(lineno))
+                for label, weight in classification:
+                    classification_f.write('\t{}  {:.3e}'.format(label, weight))
+                classification_f.write('\n')
+                classification_f.flush()
+
             line = fr.linedict[lineno]
             prediction = classification[0][0]
 
@@ -1302,6 +1318,9 @@ def classify_docs(filelist, class_path, outdir, no_eval):
             # If we still have an unwritten block, write it out.
             out_f.write('{}\n'.format(last_block))
             out_f.close()
+
+        if DEBUG_ON:
+            classification_f.close()
 
     if not no_eval:
         sc.matrix()
@@ -1353,6 +1372,9 @@ if __name__ == '__main__':
     subparsers = p.add_subparsers(help='Valid subcommands', dest='subcommand')
     subparsers.required = True
 
+    if DEBUG_ON:
+        os.makedirs(DEBUG_DIR, exist_ok=True)
+
     # -------------------------------------------
     # TRAINING
     # -------------------------------------------
@@ -1365,7 +1387,6 @@ if __name__ == '__main__':
     # -------------------------------------------
     # TESTING
     # -------------------------------------------
-
     test_p = subparsers.add_parser('test')
 
     test_p.add_argument('--type', choices=[TYPE_FREKI, TYPE_TEXT], default=TYPE_FREKI)

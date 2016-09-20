@@ -7,17 +7,31 @@
 # document.
 # =============================================================================
 
+
 # -------------------------------------------
-# Where to find and place files.
+# Set this to the root directory of the MALLET toolkit:
+# http://mallet.cs.umass.edu/
+# -------------------------------------------
+MALLET_DIR = '/Users/rgeorgi/Documents/code/mallet-2.0.7'
+
+# -------------------------------------------
+# The following options are concerned with various
+# folders for holding temporary and debug files
+# are.
 # -------------------------------------------
 
 # The directory in which to place the human readable feature files.
-FEAT_DIR  = './feats'
+FEAT_DIR  = './output/feats'
 
-# -------------------------------------------
-# Where is Mallet
-# -------------------------------------------
-MALLET_DIR = '/Users/rgeorgi/Documents/code/mallet-2.0.7'
+# Whether or not to output debugging information
+DEBUG_ON = True
+
+# The directory in which to store the information about the classifier feature
+# weights, and raw labels
+DEBUG_DIR = './output/debug'
+
+
+
 
 # -------------------------------------------
 # Path to various wordlists

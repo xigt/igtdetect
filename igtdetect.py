@@ -1271,7 +1271,7 @@ class SpanCounter(object):
 # Testing (Apply Classifier to new Documents)
 # =============================================================================
 
-def classify_docs(filelist, class_path, no_eval):
+def classify_docs(filelist, class_path):
     feat_paths = [get_feat_path(p) for p in filelist]
     if not feat_paths:
         LOG.critical("No text vector files were found.")
@@ -1513,7 +1513,7 @@ if __name__ == '__main__':
 
     if args.subcommand == 'test':
         extract_feats(filelist, args.type, args.overwrite, skip_noisy=False)
-        classify_docs(filelist, args.classifier, args.no_eval)
+        classify_docs(filelist, args.classifier)
     elif args.subcommand == 'train':
         extract_feats(filelist, args.type, args.overwrite, skip_noisy=True)
         train_classifier(filelist, args.out)

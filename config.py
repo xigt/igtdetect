@@ -7,6 +7,13 @@
 # document.
 # =============================================================================
 
+# -------------------------------------------
+# Make this so relative paths work...
+# -------------------------------------------
+import os
+MY_DIR = os.path.dirname(__file__)
+def reldir(path):
+    return os.path.relpath(path, MY_DIR)
 
 # -------------------------------------------
 # Set this to the root directory of the MALLET toolkit:
@@ -21,29 +28,38 @@ MALLET_DIR = '/Users/rgeorgi/Documents/code/mallet-2.0.7'
 # -------------------------------------------
 
 # The directory in which to place the human readable feature files.
-FEAT_DIR  = './output/feats'
+FEAT_DIR  = reldir('./output/feats')
+
+# Directory to the gold standard data for evaluation.
+GOLD_DIR = reldir('./sample')
+
+# Directory in which to place output classified files
+OUT_DIR = reldir('./output/classified')
 
 # Whether or not to output debugging information
 DEBUG_ON = True
 
 # The directory in which to store the information about the classifier feature
 # weights, and raw labels
-DEBUG_DIR = './output/debug'
+DEBUG_DIR = reldir('./output/debug')
 
 
 
 
 # -------------------------------------------
-# Path to various wordlists
+# Path to various text files
 # -------------------------------------------
 # Large English language wordlist.
-EN_WORDLIST = './data/wordlists/english_words.txt'
+EN_WORDLIST = reldir('./data/wordlists/english_words.txt')
 
 # List of gloss-line words extracted from ODIN-2.1
-GLS_WORDLIST = './data/wordlists/gloss.txt'
+GLS_WORDLIST = reldir('./data/wordlists/gloss.txt')
 
 # List of meta line words extracted from ODIN-2.1
-MET_WORDLIST = './data/wordlists/meta.txt'
+MET_WORDLIST = reldir('./data/wordlists/meta.txt')
+
+# List of language names
+LNG_NAMES = reldir('./data/langs.txt')
 
 
 # =============================================================================

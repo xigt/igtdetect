@@ -3,7 +3,7 @@ import os
 import statistics
 import abc
 import logging
-from argparse import ArgumentParser, ArgumentError
+from argparse import ArgumentParser, ArgumentError, ArgumentTypeError
 from copy import copy
 from functools import partial
 from collections import defaultdict, Counter
@@ -28,8 +28,8 @@ import re
 # -------------------------------------------
 NORM_LEVEL = 1000
 logging.addLevelName(NORM_LEVEL, 'NORMAL')
-logging.basicConfig(level=NORM_LEVEL)
-LOG = logging.getLogger()
+logging.basicConfig(level=logging.WARN)
+LOG = logging.getLogger(name='IGT-Detect')
 
 # -------------------------------------------
 # CONSTANTS
@@ -55,6 +55,9 @@ class DocReader(Iterator):
 
     def seek(self, offset, whence=0):
         self.fh.seek(offset, whence)
+
+    def get_line(self, lineno):
+        return self.linedict[lineno]
 
 
 # -------------------------------------------
@@ -207,6 +210,15 @@ class FrekiReader(DocReader):
     @property
     def width(self):
         return self.bbox.urx - self.bbox.llx
+
+    def labels(self):
+        return [line.label for lineno, line in sorted(self.linedict.items(), key=lambda x: x[0])]
+
+    def line_numbers(self):
+        return sorted(self.linedict.keys())
+
+    def __len__(self):
+        return len(self.linedict.keys())
 
     def __next__(self):
         data = self.fh.__next__()
@@ -527,9 +539,16 @@ def _path_rename(path, ext):
 def get_feat_path(path):
     return os.path.join(FEAT_DIR, _path_rename(path, '_feats.txt'))
 
-
 def get_classifications_path(path):
     return os.path.join(DEBUG_DIR, _path_rename(path, '_classifications.txt'))
+
+classified_suffix = '_classified.txt'
+
+def get_classified_path(path):
+    return os.path.join(OUT_DIR, _path_rename(path, classified_suffix))
+
+def get_gold_for_classified(path):
+    return os.path.join(GOLD_DIR, os.path.basename(path).replace(classified_suffix, '.txt'))
 
 def get_weight_path(path):
     return os.path.join(DEBUG_DIR, _path_rename(path, '_weights.txt'))
@@ -579,7 +598,7 @@ def extract_feat_for_path(path, overwrite=False, skip_noisy=False):
     # has not asked to overwrite them.
     # -------------------------------------------
     if os.path.exists(feat_path) and (not overwrite):
-        LOG.log(NORM_LEVEL, 'File "{}" already generated, skipping...'.format(feat_path))
+        LOG.log(NORM_LEVEL, 'File "{}" already generated, not regenerating (use -f to force)...'.format(feat_path))
         return
 
     LOG.log(NORM_LEVEL, 'Opening file "{}" for feature extraction to file "{}"...'.format(path_rel, feat_rel))
@@ -797,20 +816,23 @@ def oov_rate(wl: WordlistFile, line: Line):
             oov_rate = oov_words[False] / c_total
             return oov_rate
 
-
 langs = set([])
-with open('langs.txt', 'r', encoding='utf-8') as f:
-    for line in f:
-        last_col = ' '.join(line.split()[3:])
-        for langname in last_col.split(','):
-            langname = langname.replace('[', '')
-            if len(langname) >= 5:
-                langs.add(langname.lower())
+def init_langnames():
+    global langs
+    if len(langs) == 0:
+        with open(LNG_NAMES, 'r', encoding='utf-8') as f:
+            for line in f:
+                last_col = ' '.join(line.split()[3:])
+                for langname in last_col.split(','):
+                    langname = langname.replace('[', '')
+                    if len(langname) >= 5:
+                        langs.add(langname.lower())
 
 lang_re = re.compile('({})'.format('|'.join(langs), flags=re.I))
 
 
 def has_langname(line: Line):
+    init_langnames()
     return bool(line.search(lang_re))
 
 
@@ -1109,7 +1131,9 @@ class SpanCounter(object):
     def partial_recall(self):
         """
         The partial span recall is calculated by the number of gold spans for which a match
-        is found. (There could be multiple system spans which overlap with the gold span,
+        is found among the system outputs.
+
+        (There could be multiple system spans which overlap with the gold span,
         we simply care that one of them overlaps).
         :return:
         """
@@ -1123,14 +1147,17 @@ class SpanCounter(object):
 
     def partial_precision(self):
         """
-        The partial span precision is calculated by the number of system spans which do in
-        fact overlap with a gold span.
+        The partial span precision is calculated by the number of system spans which overlap
+        in some way with a system span.
         :return:
         """
         matches = 0
 
         for sys_start, sys_stop in [(s[0], s[-1]) for s in self.guess_spans]:
             for gold_start, gold_stop in [(s[0], s[-1]) for s in self.gold_spans]:
+
+                # We define a partial match by whether either the start or stop index of
+                # the system span occurs within the [start,stop] range of at least one gold span.
                 if (gold_stop >= sys_start >= gold_start) or (gold_stop >= sys_stop >= gold_start):
                     matches += 1
                     break
@@ -1138,6 +1165,9 @@ class SpanCounter(object):
         return matches / len(self.guess_spans) if self.guess_spans else 0
 
     def add_line(self, lineno, gold, guess):
+        """
+        For a given line number, catalog it.
+        """
         if guess != 'O':
             self.cur_guess_span.append(lineno)
         elif guess == 'O' and self.last_guess != 'O':
@@ -1185,12 +1215,21 @@ class SpanCounter(object):
             [inner_key for outer_key in self._matrix.keys() for inner_key in self._matrix[outer_key].keys()]),
                       key=label_sort)
 
+    # -------------------------------------------
+    # Functions for calculate per-label
+    # precision, recall, and f-measure, optionally
+    # excluding certain labels.
+    # -------------------------------------------
+
     def recall(self, exclude=list()):
         num = sum(self._matches(exclude))
         den = sum(self._gold_sums(exclude))
         return num / den if den > 0 else 0
 
     def precision(self, exclude=list()):
+        """
+        Calculate label precision
+        """
         num = sum(self._matches(exclude))
         den = sum(self._guess_sums(exclude))
         return num / den if den > 0 else 0
@@ -1208,24 +1247,31 @@ class SpanCounter(object):
     def _vals(self):
         return [[self._matrix[gold][label] for gold in self._labels()] for label in self._labels()]
 
-    def matrix(self):
-        print('\t COLS: Gold --- ROWS: Predicted')
-        print('\t'.join([''] + ['{:4}'.format(l) for l in self._labels()]))
+    def matrix(self, csv=False):
+        # Switch the delimiter from tab to comma
+        # if using a csv format.
+        delimiter = '\t'
+        if csv:
+            delimiter = ','
+
+        ret_str = '{} COLS: Gold --- ROWS: Predicted\n'.format(delimiter)
+        ret_str += delimiter.join([''] + ['{:4}'.format(l) for l in self._labels()]) + '\n'
         for label in self._labels():
             vals = [self._matrix[gold][label] for gold in self._labels()]
             matches = self._matrix[label][label]
             compares = sum(vals)
             precision = matches / compares if compares > 0 else 0
-            print('\t'.join([label] + ['{:4}'.format(v) for v in vals] + ['{:.2f}'.format(precision)]))
+            ret_str += delimiter.join([label] + ['{:4}'.format(v) for v in vals] + ['{:.2f}'.format(precision)]) + '\n'
 
-        print('\t'.join([''] + ['{:4.2f}'.format(r) for r in self._recalls()]))
+        ret_str += delimiter.join([''] + ['{:4.2f}'.format(r) for r in self._recalls()]) + '\n'
+        return ret_str
 
 
 # =============================================================================
 # Testing (Apply Classifier to new Documents)
 # =============================================================================
 
-def classify_docs(filelist, class_path, outdir, no_eval):
+def classify_docs(filelist, class_path, no_eval):
     feat_paths = [get_feat_path(p) for p in filelist]
     if not feat_paths:
         LOG.critical("No text vector files were found.")
@@ -1236,16 +1282,16 @@ def classify_docs(filelist, class_path, outdir, no_eval):
     for path, feat_path in zip(filelist, feat_paths):
 
         # -------------------------------------------
-        # If we want files output, start opening a file.
+        # Open the output classification path
         # -------------------------------------------
-        if outdir:
-            os.makedirs(outdir, exist_ok=True)
-            out_path = os.path.join(outdir, os.path.basename(path))
-            out_f = open(out_path, 'w', encoding='utf-8')
+        classified_path = get_classified_path(path)
+        os.makedirs(OUT_DIR, exist_ok=True)
+        out_f = open(classified_path, 'w', encoding='utf-8')
 
-        # -------------------------------------------
-        # Obtain the info from the saved classifier.
-        # -------------------------------------------
+        # Grab the info on the previously trained classifier
+        # so that we can add the "dummy" labels to the test
+        # file so that mallet doesn't crash when it sees
+        # a previously unseen label.
         ci = get_classifier_info(class_path)
 
         # -------------------------------------------
@@ -1263,12 +1309,18 @@ def classify_docs(filelist, class_path, outdir, no_eval):
         # labeled.
         # -------------------------------------------
 
-        last_block = None  # Keep track of which block the last block is so we can write out
+        working_block = None  # Keep track of which block the last block is so we can write out
 
         # This file will contain the raw labelings from the classifier.
         if DEBUG_ON:
             classification_f = open(get_classifications_path(path), 'w')
 
+        # -------------------------------------------
+        # Iterate through the returned classifications
+        # and assign them to the lines in the test file.
+        #
+        # Optionally, write out the raw classification distribution.
+        # -------------------------------------------
         for lineno, classification in zip(sorted(fr.featdict.keys()), classifications):
 
             # Write the line number and classification probabilities to the debug file.
@@ -1279,51 +1331,107 @@ def classify_docs(filelist, class_path, outdir, no_eval):
                 classification_f.write('\n')
                 classification_f.flush()
 
-            line = fr.linedict[lineno]
+            # Get the most probable result from
+            # the list distribution of labels returned
+            # by the classifier.
             prediction = classification[0][0]
 
-            # -------------------------------------------
-            # Get the block that contained the previous line.
-            # -------------------------------------------
+            # Get the block that contains this line.
             cur_block = fr.block_for_line(lineno)
 
-            # -------------------------------------------
-            # If we have moved onto the next block, write
+            # If this is our first block (the previous block
+            # was None), then don't try to write it out,
+            # but do set the last seen block to the current one.
+            if working_block is None:
+                working_block = copy(cur_block)
+
+            # Set the label for the line in the working block
+            # before potentially writing it out.
+            working_block.set_line_label(lineno, prediction)
+
+            # If we have moved to a new block, write
             # out the previous one.
-            # -------------------------------------------
-            if last_block is not None and cur_block.block_id != last_block.block_id:
-                out_f.write('{}\n'.format(last_block))
-                last_block = copy(cur_block)
-            if last_block is None:
-                last_block = copy(cur_block)
-
-            # -------------------------------------------
-            # Now, let's set the line label on the current
-            # line.
-            # -------------------------------------------
-            last_block.set_line_label(lineno, prediction)
-
-            # -------------------------------------------
             #
-            # -------------------------------------------
-            raw_label = line.label
-            if raw_label.startswith('*'):
-                raw_label = raw_label.replace('*', '')
+            # (NB: I write out the blocks as a chunk, rather than
+            #      the lines one at a time because it helps keep
+            #      regular spacing between lines)
+            if cur_block.block_id != working_block.block_id:
+                out_f.write('{}\n'.format(working_block))
+                working_block = copy(cur_block)
 
-            gold = raw_label.split('+')[0]
-
-            sc.add_line(lineno, gold, prediction)
-
-        if outdir:
-            # If we still have an unwritten block, write it out.
-            out_f.write('{}\n'.format(last_block))
-            out_f.close()
+        # Write out the final block in the file.
+        out_f.write('{}\n'.format(working_block))
+        out_f.close()
 
         if DEBUG_ON:
             classification_f.close()
 
-    if not no_eval:
-        sc.matrix()
+
+def eval_files(filelist, out_path, csv):
+    """
+    Given a list of freki files, evaluate them against
+    the files given in the gold dir.
+
+    If the gold dir does not exist, or does not contain
+    the specified file, make sure to log an error.
+    """
+    # Set up the output stream
+    if out_path is None:
+        out_f = sys.stdout
+    else:
+        out_f = open(out_path, 'w')
+
+    if not os.path.exists(GOLD_DIR):
+        LOG.critical('The gold file directory "{}" is missing or is unavailable.'.format(GOLD_DIR))
+        sys.exit(2)
+    elif os.path.isfile(GOLD_DIR):
+        LOG.error('The gold file directory "{}" appears to be a file, not a directory.'.format(GOLD_DIR))
+        sys.exit(2)
+
+    # Create the counter to iterate over all the files.
+    sc = SpanCounter()
+    for eval_path in filelist:
+        gold_path = get_gold_for_classified(eval_path)
+        if not os.path.exists(gold_path):
+            LOG.warning('No corresponding gold file was found for the evaluation file "{}"'.format(eval_path))
+        else:
+            eval_file(eval_path, gold_path, sc=sc)
+
+    # Now, write out the sc results.
+    delimiter = '\t'
+    if csv:
+        delimiter = ','
+    out_f.write(sc.matrix()+'\n')
+
+    out_f.write('----- Labels -----\n')
+    out_f.write(' Classifiation Acc: {:.2f}\n'.format(sc.precision()))
+    out_f.write('       Non-O P/R/F: {}\n\n'.format(delimiter.join(['{:.2f}'.format(x) for x in sc.prf(['O'])])))
+    out_f.write('----- Spans ------\n')
+    out_f.write('  Exact-span P/R/F: {}\n'.format(delimiter.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=True)])))
+    out_f.write('Partial-span P/R/F: {}\n'.format(delimiter.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=False)])))
+    
+    out_f.close()
+
+def eval_file(eval_path, gold_path, sc=None, outstream=sys.stdout):
+    """
+    Look for the filename that matches the specified file
+    """
+    eval_fr = FrekiReader(open(eval_path, 'r'))
+    gold_fr = FrekiReader(open(gold_path, 'r'))
+
+    if len(eval_fr) != len(gold_fr):
+        LOG.error('The evaluation file "{}" and the gold file "{}" appear to have a different number of lines. Evaluation aborted.'.format(eval_path, gold_path))
+    else:
+        if sc is None:
+            sc = SpanCounter()
+
+        for lineno in eval_fr.line_numbers():
+            eval_label = eval_fr.get_line(lineno).label
+            gold_label = gold_fr.get_line(lineno).label
+            sc.add_line(lineno, gold_label, eval_label)
+
+        return sc
+        print(sc.matrix())
         print()
         print(' Classifiation Acc: {:.2f}'.format(sc.precision()))
         print('       Non-O P/R/F: {}'.format(','.join(['{:.2f}'.format(x) for x in sc.prf(['O'])])))
@@ -1348,18 +1456,9 @@ def flatten(seq):
 def globfiles(pathname):
     g = glob.glob(pathname)
     if not g:
-        raise ArgumentError("No Files found matching pattern.")
+        raise ArgumentTypeError('No files found matching pattern "{}".\nCheck that the path is valid and that containing directories exist.'.format(pathname))
     else:
         return g
-
-
-def lmpath(pathname):
-    if not pathname.endswith('.lm'):
-        raise ArgumentError
-    else:
-        return pathname
-
-
 # -------------------------------------------
 
 def split_words(sent):
@@ -1393,16 +1492,30 @@ if __name__ == '__main__':
     test_p.add_argument('-f', '--overwrite', action='store_true', help='Overwrite text vectors')
     test_p.add_argument('--classifier', required=True)
     test_p.add_argument('files', nargs='+', type=globfiles, help='Files to apply classifier against')
-    test_p.add_argument('-o', '--outdir', help='Output directory for classified files; none are output if unspecified.')
-    test_p.add_argument('--no-eval', help="Don't try to evaluate performance against the files.", action='store_true')
     # -------------------------------------------
+
+
+    # -------------------------------------------
+    # EVAL
+    # -------------------------------------------
+    eval_p = subparsers.add_parser('eval')
+
+    eval_p.add_argument('files', help='Path expression (wildcards accepted) to files to evaluate.', type=globfiles)
+    eval_p.add_argument('-o', '--output', help='Write the evaluation result to a file. If not specified, stdout is used.')
+    eval_p.add_argument('--csv', help='Format the output as CSV')
+    # -------------------------------------------
+
     args = p.parse_args()
 
-    filelist = flatten(args.files)
+    filelist = []
+    if hasattr(args, 'files'):
+        filelist = flatten(args.files)
 
     if args.subcommand == 'test':
         extract_feats(filelist, args.type, args.overwrite, skip_noisy=False)
-        classify_docs(filelist, args.classifier, args.outdir, args.no_eval)
+        classify_docs(filelist, args.classifier, args.no_eval)
     elif args.subcommand == 'train':
         extract_feats(filelist, args.type, args.overwrite, skip_noisy=True)
         train_classifier(filelist, args.out)
+    elif args.subcommand == 'eval':
+        eval_files(filelist, args.output, args.csv)

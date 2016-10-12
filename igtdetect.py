@@ -246,13 +246,13 @@ class FrekiReader(DocReader):
 
                         # If we are not allowing "multi" labels, only
                         # use the first label.
-                        if not USE_MULTI_LABELS:
+                        if not USE_MULTI_LABELS(conf):
                             tag = tag.split('-')[0]
 
                         # If we are using "B" and "I" labels, label the line
                         # according to whether or not a new span has started
                         # or not.
-                        if USE_BI_LABELS and 'O' not in tag:
+                        if USE_BI_LABELS(conf) and 'O' not in tag:
                             if __name__ == '__main__':
                                 if __name__ == '__main__':
                                     if self.block_for_line(max(lineno - 1, 1)).block_id != self.cur_block.block_id:
@@ -262,7 +262,7 @@ class FrekiReader(DocReader):
 
                         # If we are not stripping the tags off, re-add them to
                         # the label
-                        if not STRIP_FLAGS:
+                        if not STRIP_FLAGS(conf):
                             tag = '+'.join([tag] + flags)
 
                     fonts = []
@@ -468,7 +468,6 @@ def add_frekifeats(r: DocReader):
         # the appropriate function if it's enabled.
         def checkfeat(name, func):
             nonlocal feats
-            print(ENABLED_FREKI_FEATS(conf))
             if name in ENABLED_FREKI_FEATS(conf):
                 feats[name] = func(r, lineno)
 
@@ -1039,7 +1038,7 @@ def classify_doc(path, classifier, classifier_info):
     # piping the output to a pipe.
     # -------------------------------------------
     classifications = []
-    p = Popen([MALLET_BIN, 'classify-svmlight',
+    p = Popen([MALLET_BIN(conf), 'classify-svmlight',
                '--classifier', classifier,
                '--input', temp_in.name,
                '--output', '-'], stdout=PIPE)
@@ -1271,7 +1270,7 @@ def classify_docs(filelist, class_path, conf_file):
         # Open the output classification path
         # -------------------------------------------
         classified_path = get_classified_path(path)
-        os.makedirs(OUT_DIR, exist_ok=True)
+        os.makedirs(OUT_DIR(conf), exist_ok=True)
         out_f = open(classified_path, 'w', encoding='utf-8')
 
         # Grab the info on the previously trained classifier
@@ -1298,7 +1297,8 @@ def classify_docs(filelist, class_path, conf_file):
         working_block = None  # Keep track of which block the last block is so we can write out
 
         # This file will contain the raw labelings from the classifier.
-        if DEBUG_ON:
+        if DEBUG_ON(conf):
+            LOG.log(NORM_LEVEL, 'Writing out raw classifications "{}"'.format(get_classifications_path(path)))
             classification_f = open(get_classifications_path(path), 'w')
 
         # -------------------------------------------
@@ -1310,7 +1310,7 @@ def classify_docs(filelist, class_path, conf_file):
         for lineno, classification in zip(sorted(fr.featdict.keys()), classifications):
 
             # Write the line number and classification probabilities to the debug file.
-            if DEBUG_ON:
+            if DEBUG_ON(conf):
                 classification_f.write('{}:'.format(lineno))
                 for label, weight in classification:
                     classification_f.write('\t{}  {:.3e}'.format(label, weight))
@@ -1349,7 +1349,7 @@ def classify_docs(filelist, class_path, conf_file):
         out_f.write('{}\n'.format(working_block))
         out_f.close()
 
-        if DEBUG_ON:
+        if DEBUG_ON(conf):
             classification_f.close()
 
 
@@ -1512,7 +1512,7 @@ if __name__ == '__main__':
     # -------------------------------------------
     # Debug
     # -------------------------------------------
-    if DEBUG_ON:
+    if DEBUG_ON(conf):
         os.makedirs(DEBUG_DIR(conf), exist_ok=True)
 
     # -------------------------------------------

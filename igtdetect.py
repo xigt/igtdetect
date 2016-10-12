@@ -1,15 +1,13 @@
 #!/usr/bin/env python3
-import os
 import statistics
 import abc
 import logging
-from argparse import ArgumentParser, ArgumentError, ArgumentTypeError
+from argparse import ArgumentParser, ArgumentTypeError
 from copy import copy
 from functools import partial
 from collections import defaultdict, Counter
 import glob
 import sys
-import pickle
 import math
 from io import TextIOBase
 from multiprocessing.pool import Pool
@@ -17,9 +15,7 @@ from tempfile import NamedTemporaryFile
 
 from subprocess import Popen, PIPE
 
-import itertools
-
-from config import *
+from env import *
 from collections import Iterator
 import re
 
@@ -60,21 +56,8 @@ class DocReader(Iterator):
         return self.linedict[lineno]
 
 
-# -------------------------------------------
-# Load the Wordlist if it is defined in the config.
-# -------------------------------------------
-class WordlistFile(set):
-    def __init__(self, path):
-        super().__init__()
-        with open(path, 'r', encoding='utf-8') as f:
-            for line in f:
-                if line.strip():
-                    self.add(line.split()[0])
 
 
-EN_WL = WordlistFile(EN_WORDLIST) if os.path.exists(EN_WORDLIST) else None
-GL_WL = WordlistFile(GLS_WORDLIST) if os.path.exists(GLS_WORDLIST) else None
-MT_WL = WordlistFile(MET_WORDLIST) if os.path.exists(MET_WORDLIST) else None
 
 # -------------------------------------------
 #
@@ -437,7 +420,7 @@ def get_textfeats(line: Line, lm: NgramDict) -> dict:
 
     def checkfeat(name, func):
         nonlocal feats
-        if name in TEXT_FEATS:
+        if name in ENABLED_TEXT_FEATS(conf):
             feats[name] = func(line)
 
     # Quick function to add featuers for words
@@ -485,7 +468,8 @@ def add_frekifeats(r: DocReader):
         # the appropriate function if it's enabled.
         def checkfeat(name, func):
             nonlocal feats
-            if name in FREKI_FEATS:
+            print(ENABLED_FREKI_FEATS(conf))
+            if name in ENABLED_FREKI_FEATS(conf):
                 feats[name] = func(r, lineno)
 
         # Apply each feature if it is enabled
@@ -512,19 +496,19 @@ def get_all_line_feats(featdict, lineno) -> dict:
     all_feats = copy(cur_feats)
 
     # Use the features for the line before the previous one (n-2)
-    if USE_PREV_PREV_LINE:
+    if USE_PREV_PREV_LINE(conf):
         prev_prev_feats = featdict.get(lineno - 2, {})
         for prev_key in prev_prev_feats.keys():
             all_feats['prev_prev_' + prev_key] = prev_prev_feats[prev_key]
 
     # Use the features for the previous line (n-1)
-    if USE_PREV_LINE:
+    if USE_PREV_LINE(conf):
         prev_feats = featdict.get(lineno - 1, {})
         for prev_key in prev_feats.keys():
             all_feats['prev_' + prev_key] = prev_feats[prev_key]
 
     # Use the features for the next line (n+1)
-    if USE_NEXT_LINE:
+    if USE_NEXT_LINE(conf):
         next_feats = featdict.get(lineno + 1, {})
         for next_key in next_feats.keys():
             all_feats['next_' + next_key] = next_feats[next_key]
@@ -537,27 +521,27 @@ def _path_rename(path, ext):
 
 
 def get_feat_path(path):
-    return os.path.join(FEAT_DIR, _path_rename(path, '_feats.txt'))
+    return os.path.join(FEAT_DIR(conf), _path_rename(path, '_feats.txt'))
 
 def get_classifications_path(path):
-    return os.path.join(DEBUG_DIR, _path_rename(path, '_classifications.txt'))
+    return os.path.join(DEBUG_DIR(conf), _path_rename(path, '_classifications.txt'))
 
 classified_suffix = '_classified.txt'
 
 def get_classified_path(path):
-    return os.path.join(OUT_DIR, _path_rename(path, classified_suffix))
+    return os.path.join(OUT_DIR(conf), _path_rename(path, classified_suffix))
 
 def get_gold_for_classified(path):
-    return os.path.join(GOLD_DIR, os.path.basename(path).replace(classified_suffix, '.txt'))
+    return os.path.join(GOLD_DIR(conf), os.path.basename(path).replace(classified_suffix, '.txt'))
 
 def get_weight_path(path):
-    return os.path.join(DEBUG_DIR, _path_rename(path, '_weights.txt'))
+    return os.path.join(DEBUG_DIR(conf), _path_rename(path, '_weights.txt'))
 
 
 # -------------------------------------------
 # Perform feature extraction.
 # -------------------------------------------
-def extract_feats(filelist, filetype, overwrite=False, skip_noisy=False):
+def extract_feats(filelist, conf, filetype, overwrite=False, skip_noisy=False):
     """
     Perform feature extraction over a list of files.
 
@@ -567,8 +551,8 @@ def extract_feats(filelist, filetype, overwrite=False, skip_noisy=False):
     p = Pool()
 
     for path in filelist:
-        p.apply_async(extract_feat_for_path, args=[path, overwrite, skip_noisy])
-        # extract_feat_for_path(path, overwrite, skip_noisy)
+        # p.apply_async(extract_feat_for_path, args=[path, overwrite, skip_noisy])
+        extract_feat_for_path(path, overwrite, skip_noisy)
 
     p.close()
     p.join()
@@ -589,8 +573,8 @@ def extract_feat_for_path(path, overwrite=False, skip_noisy=False):
     """
     feat_path = get_feat_path(path)
 
-    path_rel = os.path.relpath(path, __file__)
-    feat_rel = os.path.relpath(feat_path, __file__)
+    path_rel = os.path.relpath(path, os.getcwd())
+    feat_rel = os.path.relpath(feat_path, os.getcwd())
 
     # -------------------------------------------
     # Skip generating the text feature for this path
@@ -784,15 +768,15 @@ def clean_word(s):
 # -------------------------------------------
 
 def med_en_oov_rate(line: Line):
-    return 0.5 > oov_rate(EN_WL, line) > 0.2
+    return HIGH_OOV_THRESH(conf) > oov_rate(en_wl, line) > MED_OOV_THRESH(conf)
 
 
 def high_en_oov_rate(line: Line):
-    return oov_rate(EN_WL, line) >= 0.5
+    return oov_rate(en_wl, line) >= HIGH_OOV_THRESH(conf)
 
 
 def high_gls_oov_rate(line: Line):
-    return oov_rate(GL_WL, line) > 0.5
+    return oov_rate(gls_wl, line) > HIGH_OOV_THRESH(conf)
 
 
 def oov_rate(wl: WordlistFile, line: Line):
@@ -807,7 +791,7 @@ def oov_rate(wl: WordlistFile, line: Line):
         if len(words) <= 2:
             return 0.0
 
-        oov_words = Counter([w in EN_WL for w in words])
+        oov_words = Counter([w in en_wl for w in words])
         c_total = sum([v for v in oov_words.values()])
 
         if not c_total:
@@ -820,7 +804,7 @@ langs = set([])
 def init_langnames():
     global langs
     if len(langs) == 0:
-        with open(LNG_NAMES, 'r', encoding='utf-8') as f:
+        with open(LNG_NAMES(conf), 'r', encoding='utf-8') as f:
             for line in f:
                 last_col = ' '.join(line.split()[3:])
                 for langname in last_col.split(','):
@@ -857,8 +841,6 @@ def next_line_same_block(r: FrekiReader, lineno: int):
 # -------------------------------------------
 # TRAIN THE CLASSIFIER
 # -------------------------------------------
-MALLET_BIN = os.path.join(MALLET_DIR, 'bin/mallet')
-INFO_BIN = os.path.join(MALLET_DIR, 'bin/classifier2info')
 
 
 def label_sort(l):
@@ -921,7 +903,7 @@ def get_classifier_info(classpath, limit=30):
     :param classpath: Path to the classifier
     :param limit: Number of features to list
     """
-    p = Popen([INFO_BIN,
+    p = Popen([INFO_BIN(conf),
                '--classifier', classpath], stdout=PIPE)
 
     ci = ClassifierInfo()
@@ -958,6 +940,7 @@ def combine_feat_files(pathlist, out_path=None):
     # 1) Combine all the instances in the files...
     # -------------------------------------------
     for path in pathlist:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, 'r', encoding='utf-8') as f:
             for line in f:
                 combined_f.write(line)
@@ -965,12 +948,15 @@ def combine_feat_files(pathlist, out_path=None):
     return out_path
 
 
-def train_classifier(filelist, class_path):
+# =============================================================================
+# Train the classifier given a list of files
+# =============================================================================
+def train_classifier(filelist, classifier_path, config):
     """
     Train the classifier based on the input files in filelist.
 
     :param filelist: List of files to train the classifier based upon.
-    :param class_path:
+    :param classifier_path:
     :return:
     """
     # Get feature paths for all the input files.
@@ -985,13 +971,13 @@ def train_classifier(filelist, class_path):
     # And convert it to a vector.
     train_vector_path = convert_to_vectors(combined_feat_path)
 
-    p = Popen([MALLET_BIN, 'train-classifier',
-               '--trainer', 'MaxEntTrainer',
-               '--input', train_vector_path,
-               '--output-classifier', class_path])
+    p = Popen(JAVA_ARGS(config) + ['cc.mallet.classify.tui.Vectors2Classify',
+                                   '--trainer', 'MaxEntTrainer',
+                                   '--input', train_vector_path,
+                                   '--output-classifier', classifier_path])
     p.wait()
 
-    ci = get_classifier_info(class_path)
+    ci = get_classifier_info(classifier_path, config)
     ci.print_features()
 
     os.unlink(combined_feat_path)
@@ -1013,7 +999,7 @@ def convert_to_vectors(path, prev_pipe_path=None, out_path=None):
         vector_path = out_path
         os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-    args = [MALLET_BIN, 'import-svmlight',
+    args = [MALLET_BIN(conf), 'import-svmlight',
             '--input', path,
             '--output', vector_path]
     if prev_pipe_path:
@@ -1271,7 +1257,7 @@ class SpanCounter(object):
 # Testing (Apply Classifier to new Documents)
 # =============================================================================
 
-def classify_docs(filelist, class_path):
+def classify_docs(filelist, class_path, conf_file):
     feat_paths = [get_feat_path(p) for p in filelist]
     if not feat_paths:
         LOG.critical("No text vector files were found.")
@@ -1461,6 +1447,7 @@ def globfiles(pathname):
         return g
 # -------------------------------------------
 
+#
 def split_words(sent):
     return [re.sub('[#:]', '', w.lower()) for w in re.split('[\.\-\s]', sent)]
 
@@ -1471,8 +1458,6 @@ if __name__ == '__main__':
     subparsers = p.add_subparsers(help='Valid subcommands', dest='subcommand')
     subparsers.required = True
 
-    if DEBUG_ON:
-        os.makedirs(DEBUG_DIR, exist_ok=True)
 
     # -------------------------------------------
     # TRAINING
@@ -1482,6 +1467,7 @@ if __name__ == '__main__':
     train_p.add_argument('--type', choices=[TYPE_FREKI, TYPE_TEXT], default=TYPE_FREKI)
     train_p.add_argument('-f', '--overwrite', action='store_true', help='Overwrite text vectors.')
     train_p.add_argument('-o', '--out', required=True, help='Output path for the classifier.')
+    train_p.add_argument('-c', '--config', help='Alternate config file.')
 
     # -------------------------------------------
     # TESTING
@@ -1492,6 +1478,7 @@ if __name__ == '__main__':
     test_p.add_argument('-f', '--overwrite', action='store_true', help='Overwrite text vectors')
     test_p.add_argument('--classifier', required=True)
     test_p.add_argument('files', nargs='+', type=globfiles, help='Files to apply classifier against')
+    test_p.add_argument('-c', '--config', help='Alternate config file')
     # -------------------------------------------
 
 
@@ -1503,19 +1490,49 @@ if __name__ == '__main__':
     eval_p.add_argument('files', help='Path expression (wildcards accepted) to files to evaluate.', type=globfiles)
     eval_p.add_argument('-o', '--output', help='Write the evaluation result to a file. If not specified, stdout is used.')
     eval_p.add_argument('--csv', help='Format the output as CSV')
+    eval_p.add_argument('-c', '--config', help='Alternate config file')
     # -------------------------------------------
 
     args = p.parse_args()
+
+    # -------------------------------------------
+    # Read in the config file, if provided. Otherwise
+    # the default config parser class will use the provided
+    # defaults.
+    # -------------------------------------------
+    global conf
+    conf = DefaultConfigParser()
+    if args.config:
+        if not os.path.exists(args.config):
+            LOG.critical('The config file "{}" could not be found.'.format(args.config))
+            sys.exit(2)
+        else:
+            conf.read(args.config)
+
+    # -------------------------------------------
+    # Debug
+    # -------------------------------------------
+    if DEBUG_ON:
+        os.makedirs(DEBUG_DIR(conf), exist_ok=True)
+
+    # -------------------------------------------
+    # Load wordlist files for performance if testing or training
+    # -------------------------------------------
+    global en_wl, gls_wl
+    if args.subcommand in ['test', 'train']:
+        en_wl = EN_WL(conf)
+        gls_wl = GL_WL(conf)
+
 
     filelist = []
     if hasattr(args, 'files'):
         filelist = flatten(args.files)
 
     if args.subcommand == 'test':
-        extract_feats(filelist, args.type, args.overwrite, skip_noisy=False)
-        classify_docs(filelist, args.classifier)
+        extract_feats(filelist, conf, args.type, args.overwrite, skip_noisy=False)
+        classify_docs(filelist, args.classifier, conf)
     elif args.subcommand == 'train':
-        extract_feats(filelist, args.type, args.overwrite, skip_noisy=True)
-        train_classifier(filelist, args.out)
+        extract_feats(filelist, conf, args.type, args.overwrite, skip_noisy=True)
+        train_classifier(filelist, args.out, conf)
     elif args.subcommand == 'eval':
-        eval_files(filelist, args.output, args.csv)
+        eval_files(filelist, args.output, args.csv, conf)

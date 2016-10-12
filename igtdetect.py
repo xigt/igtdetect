@@ -540,7 +540,7 @@ def get_weight_path(path):
 # -------------------------------------------
 # Perform feature extraction.
 # -------------------------------------------
-def extract_feats(filelist, conf, filetype, overwrite=False, skip_noisy=False):
+def extract_feats(filelist, filetype, overwrite=False, skip_noisy=False):
     """
     Perform feature extraction over a list of files.
 
@@ -1367,11 +1367,11 @@ def eval_files(filelist, out_path, csv):
     else:
         out_f = open(out_path, 'w')
 
-    if not os.path.exists(GOLD_DIR):
-        LOG.critical('The gold file directory "{}" is missing or is unavailable.'.format(GOLD_DIR))
+    if not os.path.exists(GOLD_DIR(conf)):
+        LOG.critical('The gold file directory "{}" is missing or is unavailable.'.format(GOLD_DIR(conf)))
         sys.exit(2)
-    elif os.path.isfile(GOLD_DIR):
-        LOG.error('The gold file directory "{}" appears to be a file, not a directory.'.format(GOLD_DIR))
+    elif os.path.isfile(GOLD_DIR(conf)):
+        LOG.error('The gold file directory "{}" appears to be a file, not a directory.'.format(GOLD_DIR(conf)))
         sys.exit(2)
 
     # Create the counter to iterate over all the files.
@@ -1519,7 +1519,7 @@ if __name__ == '__main__':
     # Load wordlist files for performance if testing or training
     # -------------------------------------------
     global en_wl, gls_wl
-    if args.subcommand in ['test', 'train']:
+    if args.subcommand in ['test', 'train', 'eval']:
         en_wl = EN_WL(conf)
         gls_wl = GL_WL(conf)
 
@@ -1529,10 +1529,10 @@ if __name__ == '__main__':
         filelist = flatten(args.files)
 
     if args.subcommand == 'test':
-        extract_feats(filelist, conf, args.type, args.overwrite, skip_noisy=False)
+        extract_feats(filelist, args.type, args.overwrite, skip_noisy=False)
         classify_docs(filelist, args.classifier, conf)
     elif args.subcommand == 'train':
-        extract_feats(filelist, conf, args.type, args.overwrite, skip_noisy=True)
+        extract_feats(filelist, args.type, args.overwrite, skip_noisy=True)
         train_classifier(filelist, args.out, conf)
     elif args.subcommand == 'eval':
-        eval_files(filelist, args.output, args.csv, conf)
+        eval_files(filelist, args.output, args.csv)

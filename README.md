@@ -10,32 +10,48 @@ The input for training and testing can either be:
 ## 0. Dependencies and Setup
 
 
-#### Dependencies
+### Dependencies
 This package requires the [**MALLET**](http://mallet.cs.umass.edu/index.php) toolkit for its implementation of a maximum entropy classifier.
 
 The script is written in Python 3, and requires a current Python 3 interpreter to be installed.
 
-#### Setup
+### Setup
 
-The package comes with an included `config.py` file.
+1. Copy the included `defaults.ini.sample` file as `defaults.ini`
+2. Set the value of `mallet_dir` to point to the location of the mallet install on this machine.
 
-This file must be edited to point toward the installation directory for **MALLET**.
+### Using Config Files
 
-The config file can also be used to configure a number of settings for the classifier, including feature selection and label set to use.
+The `defaults.ini` is used to set the defaults for the system, but any value may be overwritten by supplying a config file based on this template using the `-c / --config` option at runtime.
+
+Any value not specified in the config file will use the default value supplied in `defaults.ini`.
+
+The features used for training are explained more in-depth within the `defaults.ini.sample` file and in the included `FEATURES.md` file.
 
 ## 1. Training
 
 ### Usage
 
 The training mode has the following usage:
-
-	usage: igtdetect.py train [-h] [--type {freki,text}] [-f] -o OUT
+	
+	usage: igtdetect.py train [-h] [-f] -o OUT [-c CONFIG]
 	                          files [files ...]
+		
+	positional arguments:
+	  files
+		
+	optional arguments:
+	  -h, --help                   show this help message and exit
+	  -f, --overwrite              Overwrite text vectors. [Default: Do not overwrite]
+	  -o OUT, --out OUT            Output path for the classifier.
+	  -c CONFIG, --config CONFIG   Specifies a config file which may 
+	                               override settings in defaults.ini.
 	                          
-* `--type` selects which input format to use (`freki` is the default)
-* `-o` specifies the output location to save the classifier.  
-* `-f` is a flag that will force overwriting the extracted features. If not specified, extracted features will be re-used. This option should be specified if the selected features have been changed in `config.py`.
-* `files`, finally, is any amount of input files.
+#### Output:
+* If `debug_on` is set to `1` or `true`:
+	* A file will be created inside a folder in the `debug` folder with the breakdown of feature weights converged upon for the classifier
+		* The file will use the same base name as the output classifier
+		* With the suffix `_feat_weights.txt`
 
 ### Example
 
@@ -50,14 +66,29 @@ To train a classifier based on the `freki` file `sample_train.txt`, the followin
 The testing mode has the following usage:
 
 	usage: igtdetect.py test [-h] [--type {freki,text}] [-f] --classifier
-	                         CLASSIFIER
+	                         CLASSIFIER [-c CONFIG]
 	                         files [files ...]
+	
+	positional arguments:
+	  files                        Files to apply classifier against
+	
+	optional arguments:
+	  -h, --help                   show this help message and exit
+	  -f, --overwrite              Overwrite text vectors. [Default: do not overwrite]
+	  --classifier CLASSIFIER      Specifies the path for the saved classifier to use.
+	  -c CONFIG, --config CONFIG   Specifies a config file which may 
+	                               override settings in defaults.ini.
 
-* `--classifier` specifies the path to a previously saved classifier.
-* `--type` again selects the input file type. Though a classifier trained on one file type will work on the other, certain features are only available to `freki` files, and thus will not be processed for `text` files, so classifiers should ideally be used with the same filetypes.
-* `-f` forces overwriting of saved feature files.
-* `--no-eval` is a flag that will prevent test files from being treated as evaluation files. By default, the script expects labels to exist in the target file for comparison.
-* `-o` specifies the directory into which the files containing the newly added labels will be saved.
+#### Output:
+* Files in [freki](https://github.com/xigt/freki) format will be written to the `out_path` directory in the config file, sharing the same filename as their input files, with the suffix `_classified.txt`
+* If the file being tested has not had its features extracted previously, or the `-f` flag is set:
+	* a file will be written containing the svm-lite formatted features for each line
+		* in the directory specified by `feat_dir`
+		* using the suffix `_feats.txt`
+* If `debug_on` is set to `1` or `true`:
+	* a line-by-line summary of the classification probabilities will be written for each file
+		* in the directory specified by `debug_dir`
+		* with the suffix `_classifications.txt`
 
 ### Example
 

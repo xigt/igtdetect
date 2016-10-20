@@ -523,7 +523,7 @@ def get_feat_path(path):
     return os.path.join(FEAT_DIR(conf), _path_rename(path, '_feats.txt'))
 
 def get_classifications_path(path):
-    return os.path.join(DEBUG_DIR(conf), _path_rename(path, '_classifications.txt'))
+    return os.path.join(os.path.join(DEBUG_DIR(conf), 'raw_classifications'), _path_rename(path, '_classifications.txt'))
 
 classified_suffix = '_classified.txt'
 
@@ -550,8 +550,8 @@ def extract_feats(filelist, filetype, overwrite=False, skip_noisy=False):
     p = Pool()
 
     for path in filelist:
-        # p.apply_async(extract_feat_for_path, args=[path, overwrite, skip_noisy])
-        extract_feat_for_path(path, overwrite, skip_noisy)
+        p.apply_async(extract_feat_for_path, args=[path, overwrite, skip_noisy])
+        # extract_feat_for_path(path, overwrite, skip_noisy)
 
     p.close()
     p.join()
@@ -572,8 +572,8 @@ def extract_feat_for_path(path, overwrite=False, skip_noisy=False):
     """
     feat_path = get_feat_path(path)
 
-    path_rel = os.path.relpath(path, os.getcwd())
-    feat_rel = os.path.relpath(feat_path, os.getcwd())
+    path_rel = os.path.abspath(path)
+    feat_rel = os.path.abspath(feat_path)
 
     # -------------------------------------------
     # Skip generating the text feature for this path
@@ -866,7 +866,9 @@ class ClassifierInfo():
         self.featdict[feat][label] = float(weight)
         self.labels.add(label)
 
-    def print_features(self, limit=30):
+    def write_features(self, out=sys.stdout, limit=30):
+
+
         vals = []
         defaults = []
         for feat in self.featdict.keys():
@@ -877,21 +879,26 @@ class ClassifierInfo():
                     vals.append((feat, label, val))
 
         defaults = sorted(defaults, key=lambda x: label_sort(x[1]))
+
+        # If limit is None, set it to dump all features.
+        if limit is None:
+            limit = len(vals)
+
         vals = sorted(vals, key=lambda x: abs(x[2]), reverse=True)[:limit]
 
         longest_featname = max([len(x[0]) for x in vals])
         longest_label = max([len(x[1]) for x in vals] + [5])
 
-        format_str = '{{:{}}}\t{{:{}}}\t{{:<5.6}}'.format(longest_featname, longest_label)
+        format_str = '{{:{}}}\t{{:{}}}\t{{:<5.6}}\n'.format(longest_featname, longest_label)
 
-        print(format_str.format('feature', 'label', 'weight'))
-        linesep = '-' * (longest_featname + longest_label + 10)
-        print(linesep)
+        out.write(format_str.format('feature', 'label', 'weight'))
+        linesep = '-' * (longest_featname + longest_label + 10)+'\n'
+        out.write(linesep)
         for d in defaults:
-            print(format_str.format(*d))
-        print(linesep)
+            out.write(format_str.format(*d))
+        out.write(linesep)
         for val in vals:
-            print(format_str.format(*val))
+            out.write(format_str.format(*val))
 
 
 def get_classifier_info(classpath, limit=30):
@@ -970,14 +977,25 @@ def train_classifier(filelist, classifier_path, config):
     # And convert it to a vector.
     train_vector_path = convert_to_vectors(combined_feat_path)
 
-    p = Popen(JAVA_ARGS(config) + ['cc.mallet.classify.tui.Vectors2Classify',
+    args = JAVA_ARGS(config) + ['cc.mallet.classify.tui.Vectors2Classify',
                                    '--trainer', 'MaxEntTrainer',
                                    '--input', train_vector_path,
-                                   '--output-classifier', classifier_path])
+                                   '--output-classifier', classifier_path]
+
+    LOG.warn(' '.join(args))
+
+    p = Popen(args)
     p.wait()
 
     ci = get_classifier_info(classifier_path, config)
-    ci.print_features()
+    if DEBUG_ON(config):
+        classifier_debug_dir = os.path.join(DEBUG_DIR(config), 'classifier_info')
+        os.makedirs(classifier_debug_dir, exist_ok=True)
+        c_name = os.path.splitext(os.path.basename(classifier_path))[0]+'_feat_weights.txt'
+        classinfo_path = os.path.join(classifier_debug_dir, c_name)
+
+        with open(classinfo_path, 'w', encoding='utf-8') as f:
+            ci.write_features(out=f, limit=None)
 
     os.unlink(combined_feat_path)
 

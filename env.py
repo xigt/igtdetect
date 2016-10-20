@@ -16,19 +16,22 @@ DEFAULTS.read(DEFAULTS_PATH)
 # Subclass the config parser to be able to obtain
 # options from the default config
 # -------------------------------------------
+def setpaths(conf, path):
+    secs = ['paths', 'files']
+    for sec in secs:
+        if sec in conf.sections():
+            for opt in conf[sec]:
+                v = conf[sec][opt]
+                conf.set(sec, opt, os.path.abspath(os.path.join(os.path.dirname(path), v)))
+
+setpaths(DEFAULTS, DEFAULTS_PATH)
+
 class DefaultConfigParser(ConfigParser):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.path = DEFAULTS_PATH
 
     def read(self, filenames, encoding=None):
         super().read(filenames, encoding=encoding)
         if isinstance(filenames, str):
-            self.path = filenames
-
-    @property
-    def dir(self):
-        return os.path.dirname(self.path)
+            setpaths(self, filenames)
 
     def get(self, section, option, *args, **kwargs):
         try:
@@ -45,18 +48,18 @@ class DefaultConfigParser(ConfigParser):
 
     def getboolean(self, section, option, *args, **kwargs):
         v = self.get(section, option, *args, **kwargs)
-        return super()._convert_to_boolean(v)
+        if v in self.BOOLEAN_STATES:
+            return self.BOOLEAN_STATES[v]
+        else:
+            raise ValueError("Not a boolean")
 
     def getfloat(self, section, option, *args, **kwargs):
         v = self.get(section, option, *args, **kwargs)
-        return super()._get_conv(section, option, float, **kwargs)
+        return float(v)
 
-    def getpath(self, sect, k, relative=True):
+    def getpath(self, sect, k):
         v = self.get(sect, k)
-        if relative:
-            return os.path.abspath(os.path.join(self.dir, v))
-        else:
-            return os.path.abspath(v)
+        return v
 
 
 # Get the mallet directory...

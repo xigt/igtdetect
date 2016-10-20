@@ -13,7 +13,7 @@
 
 # Set this to the root directory of the MALLET toolkit:
 # http://mallet.cs.umass.edu/
-mallet_dir = /Users/rgeorgi/Documents/code/mallet-2.0.7
+mallet_dir = <PATH_TO_MALLET_DIR>/mallet-2.0.7/
 
 # This is where the human-readable feature vectors will be output
 # for the files to be classified.
@@ -25,7 +25,7 @@ out_dir = ./output/classified
 
 # This is where the gold-standard freki files will be placed for
 # evaluation.
-gold_dir = ./sample
+gold_dir = ./gold
 
 # This is where various debug outputs, such as the probability
 # distributions for the classifier's decisions

@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
-import statistics
-import abc
-import logging
+import statistics, abc, logging
 from argparse import ArgumentParser, ArgumentTypeError
 from copy import copy
 from functools import partial
 from collections import defaultdict, Counter
-import glob
-import sys
-import math
+import glob, sys, math
 from io import TextIOBase
 from multiprocessing.pool import Pool
 from tempfile import NamedTemporaryFile
@@ -234,6 +230,9 @@ class FrekiReader(DocReader):
                     # -------------------------------------------
                     # Format the tag and flags
                     # -------------------------------------------
+                    tag='O'
+                    flags=''
+
                     if 'tag' in pre_dict:
                         fulltag = pre_dict['tag']
                         flags = fulltag.split('+')[1:]
@@ -281,8 +280,8 @@ class FrekiReader(DocReader):
 
                 # TODO: This exception never quite gets raised
                 except Exception as e:
-                    print(e)
-                    sys.exit()
+                    raise(e)
+
 
             else:
                 data = self.fh.__next__()
@@ -550,8 +549,8 @@ def extract_feats(filelist, filetype, overwrite=False, skip_noisy=False):
     p = Pool()
 
     for path in filelist:
-        p.apply_async(extract_feat_for_path, args=[path, overwrite, skip_noisy])
-        # extract_feat_for_path(path, overwrite, skip_noisy)
+        # p.apply_async(extract_feat_for_path, args=[path, overwrite, skip_noisy])
+        extract_feat_for_path(path, overwrite, skip_noisy)
 
     p.close()
     p.join()
@@ -1295,6 +1294,7 @@ def classify_docs(filelist, class_path, conf_file):
         # so that we can add the "dummy" labels to the test
         # file so that mallet doesn't crash when it sees
         # a previously unseen label.
+        LOG.info(NORM_LEVEL, "Getting classifier info to avoid unknown label crashes...")
         ci = get_classifier_info(class_path)
 
         # -------------------------------------------
@@ -1304,7 +1304,12 @@ def classify_docs(filelist, class_path, conf_file):
         classifications = classify_doc(feat_path, class_path, ci)
         fr = FrekiReader(open(path, 'r', encoding='utf-8'))
 
-        assert len(list(fr.featdict.keys())) == len(classifications)
+        f_len = len(list(fr.featdict.keys()))
+        c_len = len(classifications)
+
+        if f_len != c_len:
+            LOG.critical("The number of lines ({}) does not match the number of classifications ({}). Skipping file {}".format(f_len, c_len, path))
+            continue
 
         # -------------------------------------------
         # We want to get not only classification accuracy,
@@ -1316,6 +1321,7 @@ def classify_docs(filelist, class_path, conf_file):
 
         # This file will contain the raw labelings from the classifier.
         if DEBUG_ON(conf):
+            os.makedirs(os.path.dirname(get_classifications_path(path)), exist_ok=True)
             LOG.log(NORM_LEVEL, 'Writing out raw classifications "{}"'.format(get_classifications_path(path)))
             classification_f = open(get_classifications_path(path), 'w')
 
@@ -1505,7 +1511,7 @@ if __name__ == '__main__':
     # -------------------------------------------
     eval_p = subparsers.add_parser('eval')
 
-    eval_p.add_argument('files', help='Path expression (wildcards accepted) to files to evaluate.', type=globfiles)
+    eval_p.add_argument('files', nargs='+', help='Path expression (wildcards accepted) to files to evaluate.', type=globfiles)
     eval_p.add_argument('-o', '--output', help='Write the evaluation result to a file. If not specified, stdout is used.')
     eval_p.add_argument('--csv', help='Format the output as CSV')
     eval_p.add_argument('-c', '--config', help='Alternate config file')
@@ -1547,8 +1553,11 @@ if __name__ == '__main__':
         filelist = flatten(args.files)
 
     if args.subcommand == 'test':
+        LOG.log(NORM_LEVEL, "Beginning feature extraction...")
         extract_feats(filelist, args.type, args.overwrite, skip_noisy=False)
+        LOG.log(NORM_LEVEL, "Feature extraction finished, beginning classification...")
         classify_docs(filelist, args.classifier, conf)
+        LOG.log(NORM_LEVEL, "Classification complete.")
     elif args.subcommand == 'train':
         extract_feats(filelist, args.type, args.overwrite, skip_noisy=True)
         train_classifier(filelist, args.out, conf)

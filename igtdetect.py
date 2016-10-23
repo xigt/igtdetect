@@ -8,6 +8,16 @@ import glob, sys, math
 from io import TextIOBase
 from multiprocessing.pool import Pool
 from tempfile import NamedTemporaryFile
+import pickle
+
+# -------------------------------------------
+# Import scikit-learn modules
+# -------------------------------------------
+import numpy as np
+from multiprocessing import Lock
+from sklearn.feature_extraction import DictVectorizer
+from sklearn.linear_model import LogisticRegression
+from sklearn.datasets import dump_svmlight_file, load_svmlight_file
 
 from subprocess import Popen, PIPE
 
@@ -128,7 +138,7 @@ class FrekiBlock(list):
 # =============================================================================
 
 class FrekiReader(DocReader):
-    def __init__(self, fh, lm=None):
+    def __init__(self, fh, skip_feats=False):
         self.fh = fh
         self.lineno = 0
 
@@ -157,7 +167,7 @@ class FrekiReader(DocReader):
         for line in self:
             self.llxs[self.lineno] = self.bbox.llx
             self.widths[self.lineno] = self.width
-            self.featdict[self.lineno] = get_textfeats(line, lm)
+            self.featdict[self.lineno] = get_textfeats(line) if not skip_feats else {}
             self.block_ids[self.lineno] = self.block_id
             self.linedict[self.lineno] = line
 
@@ -406,7 +416,7 @@ class TextReader(DocReader):
         return data
 
 
-def get_textfeats(line: Line, lm: NgramDict) -> dict:
+def get_textfeats(line: Line) -> dict:
     """
     Given a line as input, return the text-based features
     available for that line.
@@ -428,7 +438,7 @@ def get_textfeats(line: Line, lm: NgramDict) -> dict:
         nonlocal feats
         for word in split_words(line):
             if word:
-                feats['word_{}'.format(word)] = 1
+                feats['word_{}'.format(word)] = True
 
     checkfeat(T_BASIC, basic_words)
     checkfeat(T_HAS_LANGNAME, has_langname)
@@ -536,27 +546,82 @@ def get_weight_path(path):
     return os.path.join(DEBUG_DIR(conf), _path_rename(path, '_weights.txt'))
 
 
+class ClassifierWrapper(object):
+    """
+    This class serves as a wrapper for saving the classifier
+    object and DictVectorizer together for the convenience of
+    serializing with pickle in one file.
+    """
+    def __init__(self):
+        self.c = LogisticRegression()
+        self.dv = DictVectorizer(dtype=bool)
+        self.labels = []
+
 # -------------------------------------------
 # Perform feature extraction.
 # -------------------------------------------
-def extract_feats(filelist, filetype, overwrite=False, skip_noisy=False):
+def extract_feats(filelist, cw, overwrite=False, skip_noisy=True):
     """
     Perform feature extraction over a list of files.
 
     Call extract_feat_for_path() in parallel for a speed boost.
     """
 
+    # -------------------------------------------
+    # Build a list of measurements from the files.
+    # This will be a list of dicts, where each list item
+    # represents a line, and each dictionary entry represents
+    # a feature:value pair.
+    # -------------------------------------------
+    measurements = []
+    labels = []
+
     p = Pool()
+    l = Lock()
+
+    def callback(result):
+        l.acquire()
+        path_feats, path_labels = result
+        measurements.extend(path_feats)
+        labels.extend(path_labels)
+        l.release()
 
     for path in filelist:
-        # p.apply_async(extract_feat_for_path, args=[path, overwrite, skip_noisy])
-        extract_feat_for_path(path, overwrite, skip_noisy)
+        p.apply_async(extract_feats_for_path, args=[path, overwrite, skip_noisy], callback=callback)
+        # callback(extract_feats_for_path(path, overwrite=overwrite, skip_noisy=skip_noisy))
+
 
     p.close()
     p.join()
 
+    # -------------------------------------------
+    # Turn the extracted feature dict into vectors for sklearn.
+    # -------------------------------------------
+    vec = cw.dv.fit_transform(measurements)
 
-def extract_feat_for_path(path, overwrite=False, skip_noisy=False):
+    return vec, labels
+
+def load_feats(path):
+    """
+    Load features from a saved svm-lite like file
+
+    :param path:
+    :return:
+    """
+    labels, measures = [], []
+    with open(path, 'r') as feat_f:
+        for line in feat_f:
+            line_measures = {}
+            data = line.split()
+            label = data[0]
+            for feat, value in [pair.split(':') for pair in data[1:]]:
+                line_measures[feat] = bool(value)
+
+            labels.append(label)
+            measures.append(line_measures)
+    return labels, measures
+
+def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
     """
     Perform feature extraction for a single file.
 
@@ -574,6 +639,13 @@ def extract_feat_for_path(path, overwrite=False, skip_noisy=False):
     path_rel = os.path.abspath(path)
     feat_rel = os.path.abspath(feat_path)
 
+
+    # -------------------------------------------
+    # Create a list of measurements, and associated labels.
+    # -------------------------------------------
+    measurements = []
+    labels = []
+
     # -------------------------------------------
     # Skip generating the text feature for this path
     # if it's already been generated and the user
@@ -581,33 +653,50 @@ def extract_feat_for_path(path, overwrite=False, skip_noisy=False):
     # -------------------------------------------
     if os.path.exists(feat_path) and (not overwrite):
         LOG.log(NORM_LEVEL, 'File "{}" already generated, not regenerating (use -f to force)...'.format(feat_path))
-        return
 
-    LOG.log(NORM_LEVEL, 'Opening file "{}" for feature extraction to file "{}"...'.format(path_rel, feat_rel))
+        path_labels, path_measurements = load_feats(feat_path)
+        labels.extend(path_labels)
+        measurements.extend(path_measurements)
 
-    os.makedirs(os.path.dirname(feat_path), exist_ok=True)
-    with open(feat_path, 'w', encoding='utf-8') as train_f:
+    else:
 
-        with open(path, 'r', encoding='utf-8') as f:
-            # r = FrekiReader(f) if filetype == TYPE_FREKI else TextReader(f)
-            r = FrekiReader(f)
+        #     return
 
-            # Now, let's iterate through again and extract features.
-            for lineno in sorted(r.featdict.keys()):
-                label = r.linedict[lineno].label
+        LOG.log(NORM_LEVEL, 'Opening file "{}" for feature extraction to file "{}"...'.format(path_rel, feat_rel))
 
-                # If the label contains an asterisk, that means
-                # it is very noisy. Don't use it for either "O" or any
-                # in-IGT label.
-                if label.startswith('*'):
-                    if skip_noisy:
-                        continue
-                    else:
-                        label = label.replace('*', '')
 
-                all_feats = get_all_line_feats(r.featdict, lineno)
+        os.makedirs(os.path.dirname(feat_path), exist_ok=True)
+        with open(feat_path, 'w', encoding='utf-8') as train_f:
 
-                write_training_vector(all_feats, label, train_f)
+            with open(path, 'r', encoding='utf-8') as f:
+                # r = FrekiReader(f) if filetype == TYPE_FREKI else TextReader(f)
+                r = FrekiReader(f)
+
+                # Now, let's iterate through again and extract features.
+                for lineno in sorted(r.featdict.keys()):
+                    label = r.linedict[lineno].label
+
+                    # If the label contains an asterisk, that means
+                    # it is very noisy. Don't use it for either "O" or any
+                    # in-IGT label.
+                    if label.startswith('*'):
+                        if skip_noisy:
+                            continue
+                        else:
+                            label = label.replace('*', '')
+
+                    all_feats = get_all_line_feats(r.featdict, lineno)
+
+                    # Append the measurements for this line...
+                    measurements.append(all_feats)
+
+                    #...and its label
+                    labels.append(label)
+
+
+                    write_training_vector(all_feats, label, train_f)
+
+    return measurements, labels
 
 
 def write_training_vector(featdict, label, out: TextIOBase = sys.stdout):
@@ -956,7 +1045,7 @@ def combine_feat_files(pathlist, out_path=None):
 # =============================================================================
 # Train the classifier given a list of files
 # =============================================================================
-def train_classifier(filelist, classifier_path, config):
+def train_classifier(cw: ClassifierWrapper, vec, labels, classifier_path):
     """
     Train the classifier based on the input files in filelist.
 
@@ -964,66 +1053,14 @@ def train_classifier(filelist, classifier_path, config):
     :param classifier_path:
     :return:
     """
-    # Get feature paths for all the input files.
-    feat_paths = [get_feat_path(p) for p in filelist]
 
-    if not feat_paths:
-        LOG.critical("No text vector files were found.")
+    LOG.log(NORM_LEVEL, "Training classifier...")
+    cw.c.fit(vec, labels)
+    cw.labels = np.unique(labels)
+    LOG.log(NORM_LEVEL, 'Writing classifier out to "{}"'.format(classifier_path))
+    with open(classifier_path, 'wb') as f:
+        pickle.dump(cw, f)
 
-    # Now, create an output feature file...
-    combined_feat_path = combine_feat_files(feat_paths)
-
-    # And convert it to a vector.
-    train_vector_path = convert_to_vectors(combined_feat_path)
-
-    args = JAVA_ARGS(config) + ['cc.mallet.classify.tui.Vectors2Classify',
-                                   '--trainer', 'MaxEntTrainer',
-                                   '--input', train_vector_path,
-                                   '--output-classifier', classifier_path]
-
-    LOG.warn(' '.join(args))
-
-    p = Popen(args)
-    p.wait()
-
-    ci = get_classifier_info(classifier_path, config)
-    if DEBUG_ON(config):
-        classifier_debug_dir = os.path.join(DEBUG_DIR(config), 'classifier_info')
-        os.makedirs(classifier_debug_dir, exist_ok=True)
-        c_name = os.path.splitext(os.path.basename(classifier_path))[0]+'_feat_weights.txt'
-        classinfo_path = os.path.join(classifier_debug_dir, c_name)
-
-        with open(classinfo_path, 'w', encoding='utf-8') as f:
-            ci.write_features(out=f, limit=None)
-
-    os.unlink(combined_feat_path)
-
-
-def convert_to_vectors(path, prev_pipe_path=None, out_path=None):
-    """
-    Take an svm-light format file and return a temporary file
-    converted to the mallet format binary vectors.
-    """
-
-    # If a desired output path is not specified, then
-    # create a temporary file.
-    if not out_path:
-        vector_f = NamedTemporaryFile('w', delete=False)
-        vector_f.close()
-        vector_path = vector_f.name
-    else:
-        vector_path = out_path
-        os.makedirs(os.path.dirname(out_path), exist_ok=True)
-
-    args = [MALLET_BIN(conf), 'import-svmlight',
-            '--input', path,
-            '--output', vector_path]
-    if prev_pipe_path:
-        args += ['--use-pipe-from', prev_pipe_path]
-    p = Popen(args)
-    p.wait()
-
-    return vector_path
 
 
 # -------------------------------------------
@@ -1279,30 +1316,27 @@ def classify_docs(filelist, class_path, conf_file):
         LOG.critical("No text vector files were found.")
         sys.exit()
 
-    sc = SpanCounter()
+    with open(class_path, 'rb') as cf:
+        cw = pickle.load(cf)
+        assert isinstance(cw, ClassifierWrapper), type(cw)
 
     for path, feat_path in zip(filelist, feat_paths):
 
         # -------------------------------------------
         # Open the output classification path
         # -------------------------------------------
+        fr = FrekiReader(open(path, 'r', encoding='utf-8'))
+        measurements, labels = extract_feats_for_path(path, overwrite=False, skip_noisy=True)
+
+        vec = cw.dv.transform(measurements)
+
+        classifications = cw.c.predict_proba(vec)
+
         classified_path = get_classified_path(path)
         os.makedirs(OUT_DIR(conf), exist_ok=True)
         out_f = open(classified_path, 'w', encoding='utf-8')
 
-        # Grab the info on the previously trained classifier
-        # so that we can add the "dummy" labels to the test
-        # file so that mallet doesn't crash when it sees
-        # a previously unseen label.
-        LOG.info(NORM_LEVEL, "Getting classifier info to avoid unknown label crashes...")
-        ci = get_classifier_info(class_path)
 
-        # -------------------------------------------
-        # Classify the individual docs
-        # -------------------------------------------
-        LOG.log(NORM_LEVEL, 'Classifying file "{}"'.format(path))
-        classifications = classify_doc(feat_path, class_path, ci)
-        fr = FrekiReader(open(path, 'r', encoding='utf-8'))
 
         f_len = len(list(fr.featdict.keys()))
         c_len = len(classifications)
@@ -1310,12 +1344,6 @@ def classify_docs(filelist, class_path, conf_file):
         if f_len != c_len:
             LOG.critical("The number of lines ({}) does not match the number of classifications ({}). Skipping file {}".format(f_len, c_len, path))
             continue
-
-        # -------------------------------------------
-        # We want to get not only classification accuracy,
-        # but also count how well non-O "spans" get
-        # labeled.
-        # -------------------------------------------
 
         working_block = None  # Keep track of which block the last block is so we can write out
 
@@ -1331,7 +1359,9 @@ def classify_docs(filelist, class_path, conf_file):
         #
         # Optionally, write out the raw classification distribution.
         # -------------------------------------------
-        for lineno, classification in zip(sorted(fr.featdict.keys()), classifications):
+        for lineno, probs in zip(sorted(fr.featdict.keys()), classifications):
+
+            classification = list(zip(cw.labels, probs))
 
             # Write the line number and classification probabilities to the debug file.
             if DEBUG_ON(conf):
@@ -1340,11 +1370,6 @@ def classify_docs(filelist, class_path, conf_file):
                     classification_f.write('\t{}  {:.3e}'.format(label, weight))
                 classification_f.write('\n')
                 classification_f.flush()
-
-            # Get the most probable result from
-            # the list distribution of labels returned
-            # by the classifier.
-            prediction = classification[0][0]
 
             # Get the block that contains this line.
             cur_block = fr.block_for_line(lineno)
@@ -1355,9 +1380,27 @@ def classify_docs(filelist, class_path, conf_file):
             if working_block is None:
                 working_block = copy(cur_block)
 
+            # -------------------------------------------
+            # Get the best label
+            # -------------------------------------------
+            best_label = sorted(classification, key=lambda x: x[1], reverse=True)[0][0]
+
+            # -------------------------------------------
+            # If we are using B+I labels, make sure to
+            # strip them off before writing out the file.
+            # -------------------------------------------
+            if USE_BI_LABELS(conf):
+                print(best_label)
+
+                if best_label[0:2] in set(['I-','B-']):
+                    print(best_label)
+                    sys.exit()
+                    best_label = best_label[2:]
+
+
             # Set the label for the line in the working block
             # before potentially writing it out.
-            working_block.set_line_label(lineno, prediction)
+            working_block.set_line_label(lineno, best_label)
 
             # If we have moved to a new block, write
             # out the previous one.
@@ -1426,8 +1469,8 @@ def eval_file(eval_path, gold_path, sc=None, outstream=sys.stdout):
     """
     Look for the filename that matches the specified file
     """
-    eval_fr = FrekiReader(open(eval_path, 'r'))
-    gold_fr = FrekiReader(open(gold_path, 'r'))
+    eval_fr = FrekiReader(open(eval_path, 'r'), skip_feats=True)
+    gold_fr = FrekiReader(open(gold_path, 'r'), skip_feats=True)
 
     if len(eval_fr) != len(gold_fr):
         LOG.error('The evaluation file "{}" and the gold file "{}" appear to have a different number of lines. Evaluation aborted.'.format(eval_path, gold_path))
@@ -1543,7 +1586,7 @@ if __name__ == '__main__':
     # Load wordlist files for performance if testing or training
     # -------------------------------------------
     global en_wl, gls_wl
-    if args.subcommand in ['test', 'train', 'eval']:
+    if args.subcommand in ['test', 'train']:
         en_wl = EN_WL(conf)
         gls_wl = GL_WL(conf)
 
@@ -1552,14 +1595,16 @@ if __name__ == '__main__':
     if hasattr(args, 'files'):
         filelist = flatten(args.files)
 
-    if args.subcommand == 'test':
-        LOG.log(NORM_LEVEL, "Beginning feature extraction...")
-        extract_feats(filelist, args.type, args.overwrite, skip_noisy=False)
-        LOG.log(NORM_LEVEL, "Feature extraction finished, beginning classification...")
+    if args.subcommand == 'train':
+        cw = ClassifierWrapper()
+
+        vec, labels = extract_feats(filelist, cw, overwrite=args.overwrite, skip_noisy=True)
+        train_classifier(cw, vec, labels, args.out)
+
+    elif args.subcommand == 'test':
+        LOG.log(NORM_LEVEL, "Beginning classification...")
         classify_docs(filelist, args.classifier, conf)
         LOG.log(NORM_LEVEL, "Classification complete.")
-    elif args.subcommand == 'train':
-        extract_feats(filelist, args.type, args.overwrite, skip_noisy=True)
-        train_classifier(filelist, args.out, conf)
+
     elif args.subcommand == 'eval':
         eval_files(filelist, args.output, args.csv)

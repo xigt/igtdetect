@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import statistics, abc, logging
 from argparse import ArgumentParser, ArgumentTypeError
-from copy import copy
+from copy import copy, deepcopy
 from functools import partial
 from collections import defaultdict, Counter
 import glob, sys, math
@@ -15,9 +15,11 @@ import pickle
 # -------------------------------------------
 import numpy as np
 from multiprocessing import Lock
+
+import time
 from sklearn.feature_extraction import DictVectorizer
+from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.linear_model import LogisticRegression
-from sklearn.datasets import dump_svmlight_file, load_svmlight_file
 
 from subprocess import Popen, PIPE
 
@@ -30,7 +32,7 @@ import re
 # -------------------------------------------
 NORM_LEVEL = 1000
 logging.addLevelName(NORM_LEVEL, 'NORMAL')
-logging.basicConfig(level=logging.WARN)
+logging.basicConfig(level=logging.INFO)
 LOG = logging.getLogger(name='IGT-Detect')
 
 # -------------------------------------------
@@ -59,6 +61,9 @@ class DocReader(Iterator):
         self.fh.seek(offset, whence)
 
     def get_line(self, lineno):
+        """
+        :rtype: Line
+        """
         return self.linedict[lineno]
 
 
@@ -159,6 +164,11 @@ class FrekiReader(DocReader):
         self.cur_block = None
 
         # -------------------------------------------
+        # Keep track of span IDs
+        # -------------------------------------------
+        self._seen_spans = set([])
+
+        # -------------------------------------------
         # Font Counters
         # -------------------------------------------
         self.fonts = Counter()
@@ -217,81 +227,89 @@ class FrekiReader(DocReader):
                 d = data.split()
                 self.startline = int(d[-2])
                 self.stopline = int(d[-1])
-                nd = {k: v for k, v in (t.split('=') for t in d[:-2])}
-                self.bbox = BBox(float(i) for i in nd['bbox'].split(','))
-                self.block_id = nd['block_id']
+
+                # Break the key=value pairs into a dictionary
+                block_data = {k: v for k, v in (t.split('=') for t in d[:-2])}
+                self.bbox = BBox(float(i) for i in block_data['bbox'].split(','))
+                self.block_id = block_data['block_id']
 
                 # Create a new FrekiBlock object...
-                fb = FrekiBlock(doc_id=nd['doc_id'], page=int(nd['page']),
-                                block_id=nd['block_id'], bbox=self.bbox,
+                fb = FrekiBlock(doc_id=block_data['doc_id'], page=int(block_data['page']),
+                                block_id=block_data['block_id'], bbox=self.bbox,
                                 start=int(d[-2]), stop=int(d[-1]))
-                self.block_dict[nd['block_id']] = fb
+                self.block_dict[block_data['block_id']] = fb
                 self.cur_block = fb
                 data = self.fh.__next__()
                 continue
 
             elif data.startswith('line='):
-                try:
-                    preamble, text = re.search('(line=.*?):(.*)$', data).groups()
+                # Gather the preamble into a dictionary...
+                preamble, text = re.search('(line=.*?):(.*)$', data).groups()
+                pre_dict = {x[0]: x[1] for x in re.findall('(\S+)=(\S+)', preamble)}
+                lineno = int(pre_dict['line'])
 
-                    pre_dict = {x[0]: x[1] for x in re.findall('(\S+)=(\S+)', preamble)}
-                    lineno = int(pre_dict['line'])
+                # -------------------------------------------
+                # Format the tag and flags
+                # -------------------------------------------
+                fulltag = pre_dict.get('tag', 'O')
+                flags   = fulltag.split('+')[1:]
+                tag     = fulltag.split('+')[0]
 
-                    # -------------------------------------------
-                    # Format the tag and flags
-                    # -------------------------------------------
-                    tag='O'
-                    flags=''
+                # -------------------------------------------
+                # Deal with span IDs.
+                # -------------------------------------------
+                span_id = pre_dict.get('span_id')
+                prev_span_id = self.get_line(lineno-1).span_id if lineno > 1 else None
 
-                    if 'tag' in pre_dict:
-                        fulltag = pre_dict['tag']
-                        flags = fulltag.split('+')[1:]
-                        tag = fulltag.split('+')[0]
+                # If the line is not 'O' and does not have a span...
+                if 'O' not in tag and span_id is None:
 
-                        # -------------------------------------------
-                        # Handle the tag according to the logic in the
-                        # config file.
-                        # -------------------------------------------
+                    # Assign it the previous line's span, if it had one...
+                    if prev_span_id is not None:
+                        span_id = prev_span_id
 
-                        # If we are not allowing "multi" labels, only
-                        # use the first label.
-                        if not USE_MULTI_LABELS(conf):
-                            tag = tag.split('-')[0]
+                    # Otherwise, create a new span 's[n+1]', according
+                    # to the number of already existing spans.
+                    else:
+                        span_id = 's{}'.format(len(self._seen_spans)+1)
 
-                        # If we are using "B" and "I" labels, label the line
-                        # according to whether or not a new span has started
-                        # or not.
-                        if USE_BI_LABELS(conf) and 'O' not in tag:
-                            if __name__ == '__main__':
-                                if __name__ == '__main__':
-                                    if self.block_for_line(max(lineno - 1, 1)).block_id != self.cur_block.block_id:
-                                        tag = 'B-{}'.format(tag)
-                                    else:
-                                        tag = 'I-{}'.format(tag)
+                self._seen_spans.add(span_id)
 
-                        # If we are not stripping the tags off, re-add them to
-                        # the label
-                        if not STRIP_FLAGS(conf):
-                            tag = '+'.join([tag] + flags)
+                # -------------------------------------------
+                # Use the span IDs and tag to determine the b/i status of
+                # the given line. (It is "B" if it is the beginning
+                # of a span, "I" otherwise)
+                # -------------------------------------------
+                bi_status = None
+                if 'O' not in tag:
+                    if span_id != prev_span_id:
+                        bi_status = 'b'
+                    else:
+                        bi_status = 'i'
 
-                    fonts = []
-                    if 'fonts' in pre_dict:
-                        for f in pre_dict['fonts'].split(','):
-                            fonts.append(f.split('-'))
+                # If multi-labels (e.g. L-G-T are not being used,
+                # strip the tag to only the first one.)
+                if not USE_MULTI_LABELS(conf):
+                    tag = tag.split('-')[0]
 
-                    l = Line(text, int(lineno), fonts, label=tag, flags=flags)
+                # If we are not stripping the tags off, re-add them to
+                # the label
+                if not STRIP_FLAGS(conf):
+                    tag = '+'.join([tag] + flags)
 
-                    self.lineno = int(lineno)
+                fonts = []
+                if 'fonts' in pre_dict:
+                    for f in pre_dict['fonts'].split(','):
+                        fonts.append(f.split('-'))
 
-                    # Update the block dicts
-                    self.cur_block.append(l)
-                    self.block_ids[int(lineno)] = self.cur_block.block_id
-                    return l
+                l = Line(text, int(lineno), fonts, label=tag, flags=flags, bi_status=bi_status, span_id=span_id)
 
-                # TODO: This exception never quite gets raised
-                except Exception as e:
-                    raise(e)
+                self.lineno = int(lineno)
 
+                # Update the block dicts
+                self.cur_block.append(l)
+                self.block_ids[int(lineno)] = self.cur_block.block_id
+                return l
 
             else:
                 data = self.fh.__next__()
@@ -308,7 +326,8 @@ class Line(str):
     This is a class to contain a line that is intended to be a classification target instance.
     """
 
-    def __new__(cls, seq='', lineno: int = 0, fonts: tuple = None, label: str = None, flags: tuple = None):
+    def __new__(cls, seq='', lineno: int = 0, fonts: tuple = None, label: str = None, flags: tuple = None,
+                bi_status = None, span_id = None):
 
         if fonts is None:
             fonts = tuple()
@@ -320,93 +339,31 @@ class Line(str):
         l.fonts = fonts
         l.label = label
         l.flags = flags
+        l.bi_status = bi_status
+        l.span_id = span_id
         return l
 
     def __copy__(self):
-        l = Line(seq=self, lineno=self.lineno, fonts=self.fonts, label=self.label, flags=self.flags)
+        l = Line(seq=self, lineno=self.lineno, fonts=self.fonts, label=self.label, flags=self.flags, bi_status = self.bi_status, span_id = self.span_id)
         return l
 
     def search(self, pattern, flags=0):
         return re.search(pattern, self, flags=flags)
 
     def fulltag(self):
-        return '+'.join(list(self.label) + list(self.flags))
+        return '+'.join([self.label] + list(self.flags))
 
     def preamble(self, length=0):
         fonts = ','.join(['{}-{}'.format(x[0], x[1]) for x in self.fonts])
-        pre = 'line={} tag={} fonts={}'.format(self.lineno, self.fulltag(), fonts)
+        pre = 'line={} tag={}'.format(self.lineno, self.fulltag())
+
+        if self.span_id is not None:
+            pre += ' span_id={}'.format(self.span_id)
+
+        pre += ' fonts={}'.format(fonts)
 
         return '{{:<{}}}'.format(length).format(pre)
 
-
-class NgramDict(object):
-    def __init__(self):
-        self._trigrams = defaultdict(partial(defaultdict, (partial(defaultdict, int))))
-        self._unigrams = defaultdict(int)
-        self._bigrams = defaultdict(partial(defaultdict, int))
-        self._total = 0
-
-    def add(self, c1, c2, c3, n=1):
-        self._unigrams[c1] += n
-        self._bigrams[c1][c2] += n
-        self._trigrams[c1][c2][c3] += n
-        self._total += n
-
-    def __getitem__(self, item):
-        return self._trigrams[item]
-
-    def size(self):
-        return self._total
-
-    def unigram_prob(self, k1):
-        return 0 if self._total == 0 else self._unigrams[k1] / self._total
-
-    def bigram_prob(self, k1, k2):
-        num = self._bigrams[k1][k2]
-        den = self._unigrams[k1]
-        return 0 if den == 0 else num / den
-
-    def trigram_prob(self, k1, k2, k3):
-        num = self._trigrams[k1][k2][k3]
-        den = self._bigrams[k1][k2]
-        return 0 if den == 0 else num / den
-
-    def logprob_word(self, word):
-        s = 0
-        for i, char in enumerate(word):
-            pc = '#' if i - 1 < 0 else word[i - 1]
-            nc = '#' if i >= len(word) - 1 else word[i + 1]
-            prob = self.trigram_prob(pc, char, nc)
-            if prob == 0:
-                s += float('-inf')
-            else:
-                s += math.log(self.trigram_prob(pc, char, nc), 10)
-        return s
-
-    def mean_logprob_sent(self, sent):
-        word_probs = []
-        for word in split_words(sent):
-            if word:
-                word_probs.append(self.logprob_word(word))
-
-        return statistics.mean(word_probs) if word_probs else 0
-
-    def __contains__(self, item):
-        return self._trigrams.__contains__(item)
-
-    def __str__(self):
-        ret_str = '{'
-        for k1 in self._trigrams.keys():
-            ret_str += '{} : {{'.format(k1)
-
-            for k2 in self._trigrams[k1]:
-                ret_str += '{} : {{'.format(k2)
-                for k3 in self._trigrams[k1][k2]:
-                    ret_str += '{} : {}'.format(k3, self._trigrams[k1][k2][k3])
-                ret_str += '}, '
-            ret_str += '}, '
-
-        return ret_str
 
 
 class TextReader(DocReader):
@@ -462,6 +419,7 @@ def get_textfeats(line: Line) -> dict:
     checkfeat(T_HAS_UNI, has_unicode)
     checkfeat(T_HAS_YEAR, has_year)
     checkfeat(T_HIGH_GLS_OOV_RATE, high_gls_oov_rate)
+    checkfeat(T_HIGH_MET_OOV_RATE, high_met_oov_rate)
 
     return feats
 
@@ -555,6 +513,7 @@ class ClassifierWrapper(object):
     def __init__(self):
         self.c = LogisticRegression()
         self.dv = DictVectorizer(dtype=bool)
+        self.feat_selector = None
         self.labels = []
 
 # -------------------------------------------
@@ -595,11 +554,17 @@ def extract_feats(filelist, cw, overwrite=False, skip_noisy=True):
     p.join()
 
     # -------------------------------------------
+    # Remove the "B/I" from labels if that is disabled.
+    # -------------------------------------------
+    if not USE_BI_LABELS(conf):
+        for i, label in enumerate(labels):
+            if label[0:2] in ['B-', 'I-']:
+                labels[i] = label[2:]
+
+    # -------------------------------------------
     # Turn the extracted feature dict into vectors for sklearn.
     # -------------------------------------------
-    vec = cw.dv.fit_transform(measurements)
-
-    return vec, labels
+    return measurements, labels
 
 def load_feats(path):
     """
@@ -686,6 +651,16 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
                             label = label.replace('*', '')
 
                     all_feats = get_all_line_feats(r.featdict, lineno)
+
+                    # Make sure to append an explicit "B" or "I" if
+                    # the B/I labels are used.
+                    if 'O' not in label:
+                        bi = r.get_line(lineno).bi_status
+                        if bi == 'b':
+                            label = 'B-{}'.format(label)
+                        elif bi == 'i':
+                            label = 'I-{}'.format(label)
+
 
                     # Append the measurements for this line...
                     measurements.append(all_feats)
@@ -857,12 +832,13 @@ def clean_word(s):
 def med_en_oov_rate(line: Line):
     return HIGH_OOV_THRESH(conf) > oov_rate(en_wl, line) > MED_OOV_THRESH(conf)
 
-
 def high_en_oov_rate(line: Line):
     return oov_rate(en_wl, line) >= HIGH_OOV_THRESH(conf)
 
-
 def high_gls_oov_rate(line: Line):
+    return oov_rate(gls_wl, line) > HIGH_OOV_THRESH(conf)
+
+def high_met_oov_rate(line: Line):
     return oov_rate(gls_wl, line) > HIGH_OOV_THRESH(conf)
 
 
@@ -1045,7 +1021,7 @@ def combine_feat_files(pathlist, out_path=None):
 # =============================================================================
 # Train the classifier given a list of files
 # =============================================================================
-def train_classifier(cw: ClassifierWrapper, vec, labels, classifier_path):
+def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_path):
     """
     Train the classifier based on the input files in filelist.
 
@@ -1054,12 +1030,47 @@ def train_classifier(cw: ClassifierWrapper, vec, labels, classifier_path):
     :return:
     """
 
+    # Transform the measurements (list of dicts)
+    # to a feature vector.
+    LOG.info("Converting features from dictionary to matrix...")
+    vec = cw.dv.fit_transform(measurements)
+
+    # Perform feature selection to limit to the top
+    # 1,000 features.
+    n_features = 100000
+    LOG.info('Selecting features to the top "{}" best'.format(n_features))
+    feat_select = SelectKBest(chi2, n_features)
+    feat_select.fit(vec, labels)
+
+    # Print out the pruned features...
+    selected_feats = feat_select.get_support() # Boolean array of the selected features.
+    feat_names     = np.array(cw.dv.get_feature_names())
+    LOG.info('Reduced feature count from {} to {}'.format(vec.shape[-1], np.count_nonzero(selected_feats)))
+
+    # Reduce the [sample, feature] matrix down to the selected features...
+    X = feat_select.transform(vec)
+
+    # Start the training time...
+    start_training = time.time()
+
+    # -------------------------------------------
+    # Train the classifier...
+    # -------------------------------------------
     LOG.log(NORM_LEVEL, "Training classifier...")
-    cw.c.fit(vec, labels)
-    cw.labels = np.unique(labels)
+    if DEBUG_ON(conf):
+        cw.c.set_params(verbose=True)
+
+    cw.c.set_params(n_jobs=8) # Use all cpu cores
+    cw.c.fit(X, labels)
+    LOG.log(NORM_LEVEL, 'Training finished in "{}" seconds.'.format(int(time.time() - start_training)))
+
+    cw.labels = cw.c.classes_
+    cw.feat_selector = feat_select
+
     LOG.log(NORM_LEVEL, 'Writing classifier out to "{}"'.format(classifier_path))
     with open(classifier_path, 'wb') as f:
         pickle.dump(cw, f)
+
 
 
 
@@ -1310,12 +1321,13 @@ class SpanCounter(object):
 # Testing (Apply Classifier to new Documents)
 # =============================================================================
 
-def classify_docs(filelist, class_path, conf_file):
+def classify_docs(filelist, class_path, overwrite):
     feat_paths = [get_feat_path(p) for p in filelist]
     if not feat_paths:
         LOG.critical("No text vector files were found.")
         sys.exit()
 
+    # Load the saved classifier...
     with open(class_path, 'rb') as cf:
         cw = pickle.load(cf)
         assert isinstance(cw, ClassifierWrapper), type(cw)
@@ -1326,17 +1338,20 @@ def classify_docs(filelist, class_path, conf_file):
         # Open the output classification path
         # -------------------------------------------
         fr = FrekiReader(open(path, 'r', encoding='utf-8'))
-        measurements, labels = extract_feats_for_path(path, overwrite=False, skip_noisy=True)
+        measurements, labels = extract_feats_for_path(path, overwrite=overwrite, skip_noisy=True)
 
+        # Transform the feature vector for use with the classifier...
         vec = cw.dv.transform(measurements)
 
-        classifications = cw.c.predict_proba(vec)
+        # And reduce the features according to the selected features...
+        selected_vec = cw.feat_selector.transform(vec)
+
+        # Now retrieve the classification probability distribution
+        classifications = cw.c.predict_proba(selected_vec)
 
         classified_path = get_classified_path(path)
         os.makedirs(OUT_DIR(conf), exist_ok=True)
         out_f = open(classified_path, 'w', encoding='utf-8')
-
-
 
         f_len = len(list(fr.featdict.keys()))
         c_len = len(classifications)
@@ -1378,7 +1393,7 @@ def classify_docs(filelist, class_path, conf_file):
             # was None), then don't try to write it out,
             # but do set the last seen block to the current one.
             if working_block is None:
-                working_block = copy(cur_block)
+                working_block = deepcopy(cur_block)
 
             # -------------------------------------------
             # Get the best label
@@ -1390,13 +1405,8 @@ def classify_docs(filelist, class_path, conf_file):
             # strip them off before writing out the file.
             # -------------------------------------------
             if USE_BI_LABELS(conf):
-                print(best_label)
-
                 if best_label[0:2] in set(['I-','B-']):
-                    print(best_label)
-                    sys.exit()
                     best_label = best_label[2:]
-
 
             # Set the label for the line in the working block
             # before potentially writing it out.
@@ -1410,7 +1420,7 @@ def classify_docs(filelist, class_path, conf_file):
             #      regular spacing between lines)
             if cur_block.block_id != working_block.block_id:
                 out_f.write('{}\n'.format(working_block))
-                working_block = copy(cur_block)
+                working_block = deepcopy(cur_block)
 
         # Write out the final block in the file.
         out_f.write('{}\n'.format(working_block))
@@ -1518,6 +1528,9 @@ def globfiles(pathname):
 def split_words(sent):
     return [re.sub('[#:]', '', w.lower()) for w in re.split('[\.\-\s]', sent)]
 
+# =============================================================================
+# MAIN
+# =============================================================================
 
 if __name__ == '__main__':
     p = ArgumentParser()
@@ -1541,7 +1554,6 @@ if __name__ == '__main__':
     # -------------------------------------------
     test_p = subparsers.add_parser('test')
 
-    test_p.add_argument('--type', choices=[TYPE_FREKI, TYPE_TEXT], default=TYPE_FREKI)
     test_p.add_argument('-f', '--overwrite', action='store_true', help='Overwrite text vectors')
     test_p.add_argument('--classifier', required=True)
     test_p.add_argument('files', nargs='+', type=globfiles, help='Files to apply classifier against')
@@ -1560,6 +1572,19 @@ if __name__ == '__main__':
     eval_p.add_argument('-c', '--config', help='Alternate config file')
     # -------------------------------------------
 
+    # -------------------------------------------
+    # TESTEVAL
+    # -------------------------------------------
+    testeval_p = subparsers.add_parser('testeval')
+
+    testeval_p.add_argument('-f', '--overwrite', action='store_true', help='Overwrite text vectors')
+    testeval_p.add_argument('--classifier', required=True)
+    testeval_p.add_argument('files', nargs='+', help='Path expression (wildcards accepted) to files to evaluate.', type=globfiles)
+    testeval_p.add_argument('-o', '--output', help='Write the evaluation result to a file. If not specified, stdout is used.')
+    testeval_p.add_argument('--csv', help='Format the output as CSV')
+    testeval_p.add_argument('-c', '--config', help='Alternate config file')
+    # -------------------------------------------
+
     args = p.parse_args()
 
     # -------------------------------------------
@@ -1576,6 +1601,7 @@ if __name__ == '__main__':
         else:
             conf.read(args.config)
 
+
     # -------------------------------------------
     # Debug
     # -------------------------------------------
@@ -1585,10 +1611,12 @@ if __name__ == '__main__':
     # -------------------------------------------
     # Load wordlist files for performance if testing or training
     # -------------------------------------------
-    global en_wl, gls_wl
-    if args.subcommand in ['test', 'train']:
+    global en_wl, gls_wl, met_wl
+    if args.subcommand in ['test', 'train', 'testeval']:
         en_wl = EN_WL(conf)
         gls_wl = GL_WL(conf)
+        met_wl = MT_WL(conf)
+
 
 
     filelist = []
@@ -1598,13 +1626,19 @@ if __name__ == '__main__':
     if args.subcommand == 'train':
         cw = ClassifierWrapper()
 
-        vec, labels = extract_feats(filelist, cw, overwrite=args.overwrite, skip_noisy=True)
-        train_classifier(cw, vec, labels, args.out)
+        measurements, labels = extract_feats(filelist, cw, overwrite=args.overwrite, skip_noisy=True)
+        train_classifier(cw, measurements, labels, args.out)
 
     elif args.subcommand == 'test':
         LOG.log(NORM_LEVEL, "Beginning classification...")
-        classify_docs(filelist, args.classifier, conf)
+        classify_docs(filelist, args.classifier, args.overwrite)
         LOG.log(NORM_LEVEL, "Classification complete.")
 
     elif args.subcommand == 'eval':
+        eval_files(filelist, args.output, args.csv)
+
+    elif args.subcommand == 'testeval':
+        LOG.log(NORM_LEVEL, "Beginning classification...")
+        classify_docs(filelist, args.classifier, args.overwrite)
+        LOG.log(NORM_LEVEL, "Classification complete.")
         eval_files(filelist, args.output, args.csv)

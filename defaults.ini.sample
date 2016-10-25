@@ -68,6 +68,8 @@ strip_flags = 1
 
 [featuresets]
 
+max_features = 10000
+
 freki_feats_enabled = 1
 text_feats_enabled = 1
 

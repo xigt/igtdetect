@@ -1032,7 +1032,7 @@ def combine_feat_files(pathlist, out_path=None):
 # =============================================================================
 # Train the classifier given a list of files
 # =============================================================================
-def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_path=None, debug_on=False, **kwargs):
+def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_path=None, debug_on=False, max_features = None, **kwargs):
     """
     Train the classifier based on the input files in filelist.
 
@@ -1041,6 +1041,11 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
     :return:
     """
 
+    if max_features is not None:
+        max_features = int(max_features)
+    else:
+        max_features = -1
+
     # Transform the measurements (list of dicts)
     # to a feature vector.
     ERR_LOG.info("Converting features from dictionary to matrix...")
@@ -1048,9 +1053,13 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
 
     # Perform feature selection to limit to the top
     # 1,000 features.
-    n_features = min(vec.shape[-1], 100000)
-    ERR_LOG.info('Selecting features to the top "{}" best'.format(n_features))
-    feat_select = SelectKBest(chi2, n_features)
+
+    feat_select = SelectKBest(chi2, 'all')
+    if max_features > 0:
+        n_features = min(vec.shape[-1], max_features)
+        ERR_LOG.info('Selecting features to the top "{}" best'.format(n_features))
+        feat_select = SelectKBest(chi2, n_features)
+
     feat_select.fit(vec, labels)
 
     # Print out the pruned features...

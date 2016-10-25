@@ -6,6 +6,7 @@ from functools import partial
 from collections import defaultdict, Counter
 import glob, sys, math
 from io import TextIOBase
+from logging import StreamHandler
 from multiprocessing.pool import Pool
 from tempfile import NamedTemporaryFile
 import pickle
@@ -32,8 +33,17 @@ import re
 # -------------------------------------------
 NORM_LEVEL = 1000
 logging.addLevelName(NORM_LEVEL, 'NORMAL')
-logging.basicConfig(level=logging.INFO)
-LOG = logging.getLogger(name='IGT-Detect')
+ERR_LOG = logging.getLogger(name='ERRORS')
+STD_LOG = logging.getLogger(name='STD')
+
+stdhandler = StreamHandler(sys.stdout)
+errhandler = StreamHandler(sys.stderr)
+
+stdhandler.setLevel(NORM_LEVEL)
+errhandler.setLevel(logging.INFO)
+
+STD_LOG.addHandler(stdhandler)
+ERR_LOG.addHandler(errhandler)
 
 # -------------------------------------------
 # CONSTANTS
@@ -487,28 +497,29 @@ def _path_rename(path, ext):
 
 
 def get_feat_path(path):
-    return os.path.join(FEAT_DIR(conf), _path_rename(path, '_feats.txt'))
+    return os.path.join(FEAT_DIR(args), _path_rename(path, '_feats.txt'))
 
 def get_classifications_path(path):
-    return os.path.join(os.path.join(DEBUG_DIR(conf), 'raw_classifications'), _path_rename(path, '_classifications.txt'))
+    return os.path.join(os.path.join(DEBUG_DIR(args), 'raw_classifications'), _path_rename(path, '_classifications.txt'))
 
 classified_suffix = '_classified.txt'
 
 def get_classified_path(path):
-    return os.path.join(OUT_DIR(conf), _path_rename(path, classified_suffix))
+    return os.path.join(OUT_DIR(args), _path_rename(path, classified_suffix))
 
 def get_gold_for_classified(path):
-    return os.path.join(GOLD_DIR(conf), os.path.basename(path).replace(classified_suffix, '.txt'))
+    return os.path.join(GOLD_DIR(args), os.path.basename(path).replace(classified_suffix, '.txt'))
 
 def get_weight_path(path):
-    return os.path.join(DEBUG_DIR(conf), _path_rename(path, '_weights.txt'))
+    return os.path.join(DEBUG_DIR(args), _path_rename(path, '_weights.txt'))
 
 
 class ClassifierWrapper(object):
     """
-    This class serves as a wrapper for saving the classifier
-    object and DictVectorizer together for the convenience of
-    serializing with pickle in one file.
+    This class serves as a wrapper for saving the classifier.
+    This consists of the learner itself ("c"), the object
+    responsible for keeping track of the feature-to-index mappings,
+    and which features to use (via the "feat_selector")
     """
     def __init__(self):
         self.c = LogisticRegression()
@@ -617,7 +628,7 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
     # has not asked to overwrite them.
     # -------------------------------------------
     if os.path.exists(feat_path) and (not overwrite):
-        LOG.log(NORM_LEVEL, 'File "{}" already generated, not regenerating (use -f to force)...'.format(feat_path))
+        ERR_LOG.warn('File "{}" already generated, not regenerating (use -f to force)...'.format(feat_path))
 
         path_labels, path_measurements = load_feats(feat_path)
         labels.extend(path_labels)
@@ -627,7 +638,7 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
 
         #     return
 
-        LOG.log(NORM_LEVEL, 'Opening file "{}" for feature extraction to file "{}"...'.format(path_rel, feat_rel))
+        ERR_LOG.info('Opening file "{}" for feature extraction to file "{}"...'.format(path_rel, feat_rel))
 
 
         os.makedirs(os.path.dirname(feat_path), exist_ok=True)
@@ -1021,7 +1032,7 @@ def combine_feat_files(pathlist, out_path=None):
 # =============================================================================
 # Train the classifier given a list of files
 # =============================================================================
-def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_path):
+def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_path=None, debug_on=False, **kwargs):
     """
     Train the classifier based on the input files in filelist.
 
@@ -1032,20 +1043,20 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
 
     # Transform the measurements (list of dicts)
     # to a feature vector.
-    LOG.info("Converting features from dictionary to matrix...")
+    ERR_LOG.info("Converting features from dictionary to matrix...")
     vec = cw.dv.fit_transform(measurements)
 
     # Perform feature selection to limit to the top
     # 1,000 features.
-    n_features = 100000
-    LOG.info('Selecting features to the top "{}" best'.format(n_features))
+    n_features = min(vec.shape[-1], 100000)
+    ERR_LOG.info('Selecting features to the top "{}" best'.format(n_features))
     feat_select = SelectKBest(chi2, n_features)
     feat_select.fit(vec, labels)
 
     # Print out the pruned features...
     selected_feats = feat_select.get_support() # Boolean array of the selected features.
     feat_names     = np.array(cw.dv.get_feature_names())
-    LOG.info('Reduced feature count from {} to {}'.format(vec.shape[-1], np.count_nonzero(selected_feats)))
+    ERR_LOG.info('Reduced feature count from {} to {}'.format(vec.shape[-1], np.count_nonzero(selected_feats)))
 
     # Reduce the [sample, feature] matrix down to the selected features...
     X = feat_select.transform(vec)
@@ -1056,18 +1067,18 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
     # -------------------------------------------
     # Train the classifier...
     # -------------------------------------------
-    LOG.log(NORM_LEVEL, "Training classifier...")
-    if DEBUG_ON(conf):
+    ERR_LOG.log(NORM_LEVEL, "Training classifier...")
+    if debug_on:
         cw.c.set_params(verbose=True)
 
     cw.c.set_params(n_jobs=8) # Use all cpu cores
     cw.c.fit(X, labels)
-    LOG.log(NORM_LEVEL, 'Training finished in "{}" seconds.'.format(int(time.time() - start_training)))
+    ERR_LOG.log(NORM_LEVEL, 'Training finished in "{}" seconds.'.format(int(time.time() - start_training)))
 
     cw.labels = cw.c.classes_
     cw.feat_selector = feat_select
 
-    LOG.log(NORM_LEVEL, 'Writing classifier out to "{}"'.format(classifier_path))
+    ERR_LOG.log(NORM_LEVEL, 'Writing classifier out to "{}"'.format(classifier_path))
     with open(classifier_path, 'wb') as f:
         pickle.dump(cw, f)
 
@@ -1321,14 +1332,15 @@ class SpanCounter(object):
 # Testing (Apply Classifier to new Documents)
 # =============================================================================
 
-def classify_docs(filelist, class_path, overwrite):
+def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False, **kwargs):
     feat_paths = [get_feat_path(p) for p in filelist]
+
     if not feat_paths:
-        LOG.critical("No text vector files were found.")
+        ERR_LOG.critical("No text vector files were found.")
         sys.exit()
 
     # Load the saved classifier...
-    with open(class_path, 'rb') as cf:
+    with open(classifier_path, 'rb') as cf:
         cw = pickle.load(cf)
         assert isinstance(cw, ClassifierWrapper), type(cw)
 
@@ -1349,23 +1361,26 @@ def classify_docs(filelist, class_path, overwrite):
         # Now retrieve the classification probability distribution
         classifications = cw.c.predict_proba(selected_vec)
 
-        classified_path = get_classified_path(path)
-        os.makedirs(OUT_DIR(conf), exist_ok=True)
-        out_f = open(classified_path, 'w', encoding='utf-8')
-
+        # Ensure that the number of lines in the feature file
+        # matches the number of lines returned by the classifier
         f_len = len(list(fr.featdict.keys()))
         c_len = len(classifications)
 
         if f_len != c_len:
-            LOG.critical("The number of lines ({}) does not match the number of classifications ({}). Skipping file {}".format(f_len, c_len, path))
+            ERR_LOG.critical("The number of lines ({}) does not match the number of classifications ({}). Skipping file {}".format(f_len, c_len, path))
             continue
+
+        # Get ready to write the classified file out
+        classified_path = get_classified_path(path)
+        os.makedirs(OUT_DIR(args), exist_ok=True)
+        out_f = open(classified_path, 'w', encoding='utf-8')
 
         working_block = None  # Keep track of which block the last block is so we can write out
 
         # This file will contain the raw labelings from the classifier.
-        if DEBUG_ON(conf):
+        if debug_on:
             os.makedirs(os.path.dirname(get_classifications_path(path)), exist_ok=True)
-            LOG.log(NORM_LEVEL, 'Writing out raw classifications "{}"'.format(get_classifications_path(path)))
+            ERR_LOG.log(NORM_LEVEL, 'Writing out raw classifications "{}"'.format(get_classifications_path(path)))
             classification_f = open(get_classifications_path(path), 'w')
 
         # -------------------------------------------
@@ -1379,7 +1394,7 @@ def classify_docs(filelist, class_path, overwrite):
             classification = list(zip(cw.labels, probs))
 
             # Write the line number and classification probabilities to the debug file.
-            if DEBUG_ON(conf):
+            if debug_on:
                 classification_f.write('{}:'.format(lineno))
                 for label, weight in classification:
                     classification_f.write('\t{}  {:.3e}'.format(label, weight))
@@ -1426,13 +1441,14 @@ def classify_docs(filelist, class_path, overwrite):
         out_f.write('{}\n'.format(working_block))
         out_f.close()
 
-        if DEBUG_ON(conf):
+        if debug_on:
             classification_f.close()
 
 
-def eval_files(filelist, out_path, csv):
+
+def eval_files(filelist, out_path, csv, gold_dir=None, **kwargs):
     """
-    Given a list of freki files, evaluate them against
+    Given a list of target files, evaluate them against
     the files given in the gold dir.
 
     If the gold dir does not exist, or does not contain
@@ -1444,11 +1460,11 @@ def eval_files(filelist, out_path, csv):
     else:
         out_f = open(out_path, 'w')
 
-    if not os.path.exists(GOLD_DIR(conf)):
-        LOG.critical('The gold file directory "{}" is missing or is unavailable.'.format(GOLD_DIR(conf)))
+    if not os.path.exists(gold_dir):
+        ERR_LOG.critical('The gold file directory "{}" is missing or is unavailable.'.format(GOLD_DIR(conf)))
         sys.exit(2)
-    elif os.path.isfile(GOLD_DIR(conf)):
-        LOG.error('The gold file directory "{}" appears to be a file, not a directory.'.format(GOLD_DIR(conf)))
+    elif not os.path.isdir(gold_dir):
+        ERR_LOG.error('The gold file directory "{}" appears to be a file, not a directory.'.format(GOLD_DIR(conf)))
         sys.exit(2)
 
     # Create the counter to iterate over all the files.
@@ -1456,7 +1472,7 @@ def eval_files(filelist, out_path, csv):
     for eval_path in filelist:
         gold_path = get_gold_for_classified(eval_path)
         if not os.path.exists(gold_path):
-            LOG.warning('No corresponding gold file was found for the evaluation file "{}"'.format(eval_path))
+            ERR_LOG.warning('No corresponding gold file was found for the evaluation file "{}"'.format(eval_path))
         else:
             eval_file(eval_path, gold_path, sc=sc)
 
@@ -1483,7 +1499,7 @@ def eval_file(eval_path, gold_path, sc=None, outstream=sys.stdout):
     gold_fr = FrekiReader(open(gold_path, 'r'), skip_feats=True)
 
     if len(eval_fr) != len(gold_fr):
-        LOG.error('The evaluation file "{}" and the gold file "{}" appear to have a different number of lines. Evaluation aborted.'.format(eval_path, gold_path))
+        ERR_LOG.error('The evaluation file "{}" and the gold file "{}" appear to have a different number of lines. Evaluation aborted.'.format(eval_path, gold_path))
     else:
         if sc is None:
             sc = SpanCounter()
@@ -1494,12 +1510,11 @@ def eval_file(eval_path, gold_path, sc=None, outstream=sys.stdout):
             sc.add_line(lineno, gold_label, eval_label)
 
         return sc
-        print(sc.matrix())
-        print()
-        print(' Classifiation Acc: {:.2f}'.format(sc.precision()))
-        print('       Non-O P/R/F: {}'.format(','.join(['{:.2f}'.format(x) for x in sc.prf(['O'])])))
-        print('  Exact-span P/R/F: {}'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=True)])))
-        print('Partial-span P/R/F: {}'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=False)])))
+        outstream.write(sc.matrix()+'\n\n')
+        outstream.write(' Classifiation Acc: {:.2f}\n'.format(sc.precision()))
+        outstream.write('       Non-O P/R/F: {}\n'.format(','.join(['{:.2f}'.format(x) for x in sc.prf(['O'])])))
+        outstream.write('  Exact-span P/R/F: {}\n'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=True)])))
+        outstream.write('Partial-span P/R/F: {}\n'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=False)])))
 
 
 def flatten(seq):
@@ -1521,7 +1536,13 @@ def globfiles(pathname):
     if not g:
         raise ArgumentTypeError('No files found matching pattern "{}".\nCheck that the path is valid and that containing directories exist.'.format(pathname))
     else:
-        return g
+        paths = []
+        for path in g:
+            if os.path.isdir(path):
+                paths.extend([os.path.join(path, p) for p in os.listdir(path)])
+            else:
+                paths.append(path)
+        return paths
 # -------------------------------------------
 
 #
@@ -1533,112 +1554,154 @@ def split_words(sent):
 # =============================================================================
 
 if __name__ == '__main__':
-    p = ArgumentParser()
 
-    subparsers = p.add_subparsers(help='Valid subcommands', dest='subcommand')
+    # -------------------------------------------
+    # Set up the main argument parser (for subcommands)
+    # -------------------------------------------
+    main_parser = ArgumentParser()
+
+    # -------------------------------------------
+    # Set up common parser options shared by
+    # the subcommands
+    # -------------------------------------------
+    common_parser = ArgumentParser(add_help=False)
+    common_parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbosity.')
+    common_parser.add_argument('-c', '--config', help='Alternate config file.')
+    common_parser.add_argument('-f', '--force', dest='overwrite', action='store_true',
+                               help='Overwrite previously generated feature files.')
+
+    # -------------------------------------------
+    # Load the default config file.
+    # -------------------------------------------
+    conf = None
+    def_path = os.path.join(os.path.dirname(__file__), './defaults.ini')
+    if os.path.exists(def_path):
+        conf = PathRelativeConfigParser()
+        conf.read(def_path)
+
+    for sec in conf.sections():
+        common_parser.set_defaults(**conf[sec])
+
+    # Determine whether the classifier
+    classifier_required = os.path.exists(def_path)
+
+    # -------------------------------------------
+    # Set up a common parser to inherit for the functions
+    # that require the classifier to be specified
+    # -------------------------------------------
+    tt_parser = ArgumentParser(add_help=False)
+    tt_parser.add_argument('--classifier-path', required=classifier_required, help='Path to the saved classifier model.')
+    tt_parser.add_argument('--in-files', help='Path to input files used for training or testing.', type=globfiles)
+
+    # Parser for combining evaluation arguments.
+    ev_parser = ArgumentParser(add_help=False)
+    ev_parser.add_argument('-o', '--output', dest='out_path', help='Output path to write result. [Default: stdout]')
+    ev_parser.add_argument('--csv', help='Format the output as CSV.')
+    ev_parser.add_argument('--eval-files', help='Files to evaluate against', required=True, type=globfiles)
+    ev_parser.add_argument('--gold-dir', default=conf.get('paths', 'gold_dir'))
+
+
+    # -------------------------------------------
+    # Set up the subcommands
+    # -------------------------------------------
+
+    subparsers = main_parser.add_subparsers(help='Valid subcommands', dest='subcommand')
     subparsers.required = True
-
 
     # -------------------------------------------
     # TRAINING
     # -------------------------------------------
-    train_p = subparsers.add_parser('train')
-    train_p.add_argument('files', nargs='+', type=globfiles)
-    train_p.add_argument('--type', choices=[TYPE_FREKI, TYPE_TEXT], default=TYPE_FREKI)
-    train_p.add_argument('-f', '--overwrite', action='store_true', help='Overwrite text vectors.')
-    train_p.add_argument('-o', '--out', required=True, help='Output path for the classifier.')
-    train_p.add_argument('-c', '--config', help='Alternate config file.')
+    train_p = subparsers.add_parser('train', parents=[common_parser, tt_parser])
 
     # -------------------------------------------
     # TESTING
     # -------------------------------------------
-    test_p = subparsers.add_parser('test')
-
-    test_p.add_argument('-f', '--overwrite', action='store_true', help='Overwrite text vectors')
-    test_p.add_argument('--classifier', required=True)
-    test_p.add_argument('files', nargs='+', type=globfiles, help='Files to apply classifier against')
-    test_p.add_argument('-c', '--config', help='Alternate config file')
-    # -------------------------------------------
-
+    test_p = subparsers.add_parser('test', parents=[common_parser, tt_parser])
 
     # -------------------------------------------
     # EVAL
     # -------------------------------------------
-    eval_p = subparsers.add_parser('eval')
-
-    eval_p.add_argument('files', nargs='+', help='Path expression (wildcards accepted) to files to evaluate.', type=globfiles)
-    eval_p.add_argument('-o', '--output', help='Write the evaluation result to a file. If not specified, stdout is used.')
-    eval_p.add_argument('--csv', help='Format the output as CSV')
-    eval_p.add_argument('-c', '--config', help='Alternate config file')
-    # -------------------------------------------
+    eval_p = subparsers.add_parser('eval', parents=[common_parser, ev_parser])
 
     # -------------------------------------------
     # TESTEVAL
     # -------------------------------------------
-    testeval_p = subparsers.add_parser('testeval')
-
-    testeval_p.add_argument('-f', '--overwrite', action='store_true', help='Overwrite text vectors')
-    testeval_p.add_argument('--classifier', required=True)
-    testeval_p.add_argument('files', nargs='+', help='Path expression (wildcards accepted) to files to evaluate.', type=globfiles)
-    testeval_p.add_argument('-o', '--output', help='Write the evaluation result to a file. If not specified, stdout is used.')
-    testeval_p.add_argument('--csv', help='Format the output as CSV')
-    testeval_p.add_argument('-c', '--config', help='Alternate config file')
+    testeval_p = subparsers.add_parser('testeval', parents=[common_parser, tt_parser, ev_parser])
     # -------------------------------------------
 
-    args = p.parse_args()
+    # -------------------------------------------
+    # TRAINTESTEVAL
+    # -------------------------------------------
+    traintesteval_p = subparsers.add_parser('traintesteval', parents=[common_parser, tt_parser, ev_parser])
+
+    global args
+    args = main_parser.parse_args()
 
     # -------------------------------------------
     # Read in the config file, if provided. Otherwise
     # the default config parser class will use the provided
     # defaults.
     # -------------------------------------------
-    global conf
-    conf = DefaultConfigParser()
     if args.config:
         if not os.path.exists(args.config):
-            LOG.critical('The config file "{}" could not be found.'.format(args.config))
+            ERR_LOG.critical('The config file "{}" could not be found.'.format(args.config))
             sys.exit(2)
         else:
-            conf.read(args.config)
-
+            alt_c = PathRelativeConfigParser()
+            alt_c.read(args.config)
+            for sec in alt_c.sections():
+                for key in alt_c[sec].keys():
+                    setattr(alt_c, key, alt_c[sec][key])
 
     # -------------------------------------------
     # Debug
     # -------------------------------------------
-    if DEBUG_ON(conf):
-        os.makedirs(DEBUG_DIR(conf), exist_ok=True)
+
+    if DEBUG_ON(args):
+        os.makedirs(DEBUG_DIR(args), exist_ok=True)
 
     # -------------------------------------------
     # Load wordlist files for performance if testing or training
     # -------------------------------------------
     global en_wl, gls_wl, met_wl
-    if args.subcommand in ['test', 'train', 'testeval']:
+    if args.subcommand in ['test', 'train', 'testeval', 'traintesteval']:
         en_wl = EN_WL(conf)
         gls_wl = GL_WL(conf)
         met_wl = MT_WL(conf)
 
 
 
-    filelist = []
-    if hasattr(args, 'files'):
-        filelist = flatten(args.files)
+    filelist   = flatten(getattr(args, 'in_files', []))
+    eval_list  = flatten(getattr(args, 'eval_files', []))
 
-    if args.subcommand == 'train':
+
+    def train(fl):
         cw = ClassifierWrapper()
+        measurements, labels = extract_feats(fl, cw, overwrite=args.overwrite, skip_noisy=True)
+        train_classifier(cw, measurements, labels, **vars(args))
 
-        measurements, labels = extract_feats(filelist, cw, overwrite=args.overwrite, skip_noisy=True)
-        train_classifier(cw, measurements, labels, args.out)
+    def test(fl):
+        ERR_LOG.log(NORM_LEVEL, "Beginning classification...")
+        classify_docs(fl, **vars(args))
+        ERR_LOG.log(NORM_LEVEL, "Classification complete.")
 
-    elif args.subcommand == 'test':
-        LOG.log(NORM_LEVEL, "Beginning classification...")
-        classify_docs(filelist, args.classifier, args.overwrite)
-        LOG.log(NORM_LEVEL, "Classification complete.")
+    def eval(fl):
+        ERR_LOG.log(NORM_LEVEL, "Beginning evaluation...")
+        eval_files(fl, **vars(args))
 
-    elif args.subcommand == 'eval':
-        eval_files(filelist, args.output, args.csv)
+    def testeval(fl):
+        test(fl)
+        classified_paths = [get_classified_path(p) for p in fl]
+        eval(classified_paths)
 
-    elif args.subcommand == 'testeval':
-        LOG.log(NORM_LEVEL, "Beginning classification...")
-        classify_docs(filelist, args.classifier, args.overwrite)
-        LOG.log(NORM_LEVEL, "Classification complete.")
-        eval_files(filelist, args.output, args.csv)
+    def traintesteval(fl, ep):
+        train(fl)
+        testeval(ep)
+
+
+    # Switch between the commands
+    if args.subcommand == 'train': train(filelist)
+    elif args.subcommand == 'test': test(filelist)
+    elif args.subcommand == 'eval': eval(eval_list)
+    elif args.subcommand == 'testeval': testeval(filelist)
+    elif args.subcommand == 'traintesteval': traintesteval(filelist, eval_list)

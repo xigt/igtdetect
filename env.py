@@ -6,13 +6,6 @@ def absdir(path):
     return os.path.abspath(os.path.join(MY_DIR, path))
 
 # -------------------------------------------
-# Import the default config settings from defaults.ini
-# -------------------------------------------
-DEFAULTS = ConfigParser()
-DEFAULTS_PATH = absdir('./defaults.ini')
-DEFAULTS.read(DEFAULTS_PATH)
-
-# -------------------------------------------
 # Subclass the config parser to be able to obtain
 # options from the default config
 # -------------------------------------------
@@ -24,42 +17,16 @@ def setpaths(conf, path):
                 v = conf[sec][opt]
                 conf.set(sec, opt, os.path.abspath(os.path.join(os.path.dirname(path), v)))
 
-setpaths(DEFAULTS, DEFAULTS_PATH)
+class PathRelativeConfigParser(ConfigParser):
 
-class DefaultConfigParser(ConfigParser):
+    def __init__(self, *args, path=None, **kwargs):
+        super().__init__(*args, **kwargs)
+        setpaths(self, path)
 
     def read(self, filenames, encoding=None):
         super().read(filenames, encoding=encoding)
         if isinstance(filenames, str):
             setpaths(self, filenames)
-
-    def get(self, section, option, *args, **kwargs):
-        try:
-            v = super().get(section, option, *args, **kwargs)
-        except NoSectionError as nse:
-            v = None
-        except NoOptionError as noe:
-            v = None
-
-        if v is None:
-            return DEFAULTS.get(section, option, *args, **kwargs)
-        else:
-            return v
-
-    def getboolean(self, section, option, *args, **kwargs):
-        v = self.get(section, option, *args, **kwargs)
-        if v in self.BOOLEAN_STATES:
-            return self.BOOLEAN_STATES[v]
-        else:
-            raise ValueError("Not a boolean")
-
-    def getfloat(self, section, option, *args, **kwargs):
-        v = self.get(section, option, *args, **kwargs)
-        return float(v)
-
-    def getpath(self, sect, k):
-        v = self.get(sect, k)
-        return v
 
 
 # Get the mallet directory...
@@ -91,25 +58,26 @@ def JAVA_ARGS(config):
 # -------------------------------------------
 
 # The directory in which to place the human readable feature files.
-def FEAT_DIR(config):
-    return config.getpath('paths', 'feat_dir')
+def FEAT_DIR(obj):
+    return getattr(obj, 'feat_dir')
 
 # Directory to the gold standard data for evaluation.
-def GOLD_DIR(config):
-    return config.getpath('paths', 'gold_dir')
+def GOLD_DIR(obj):
+    return getattr(obj, 'gold_dir')
 
 # Directory in which to place output classified files
-def OUT_DIR(config):
-    return config.getpath('paths', 'out_dir')
+def OUT_DIR(obj):
+    return getattr(obj, 'out_dir')
 
 # Whether or not to output debugging information
-def DEBUG_ON(config):
-    return config.getboolean('runtime', 'debug_on')
+def DEBUG_ON(obj):
+    return getattr(obj, 'debug_on')
 
 # The directory in which to store the information about the classifier feature
 # weights, and raw labels
-def DEBUG_DIR(config):
-    return config.getpath('paths', 'debug_dir')
+def DEBUG_DIR(obj):
+    return getattr(obj, 'debug_dir')
+
 
 
 # -------------------------------------------
@@ -117,20 +85,20 @@ def DEBUG_DIR(config):
 # -------------------------------------------
 # Large English language wordlist.
 def EN_WORDLIST(config):
-    return config.getpath('files', 'en_wordlist')
+    return config.get('files', 'en_wordlist')
 
 # List of gloss-line words extracted from ODIN-2.
 # 1
 def GLS_WORDLIST(config):
-    return config.getpath('files', 'gls_wordlist')
+    return config.get('files', 'gls_wordlist')
 
 # List of meta line words extracted from ODIN-2.1
 def MET_WORDLIST(config):
-    return config.getpath('files', 'met_wordlist')
+    return config.get('files', 'met_wordlist')
 
 # List of language names
 def LNG_NAMES(config):
-    return config.getpath('files', 'lng_names')
+    return config.get('files', 'lng_names')
 
 def HIGH_OOV_THRESH(config):
     return config.getfloat('thresholds', 'high_oov')
@@ -284,7 +252,7 @@ T_LIST = [T_BASIC, T_HAS_LANGNAME, T_HAS_GRAMS, T_HAS_PARENTHETICAL, T_HAS_CITAT
 # contained on.
 # -------------------------------------------
 
-def enabled_feats(config: DefaultConfigParser, section, featlist):
+def enabled_feats(config: ConfigParser, section, featlist):
     enabled = set([])
     for feat in featlist:
         b = config.getboolean(section, feat)
@@ -292,10 +260,10 @@ def enabled_feats(config: DefaultConfigParser, section, featlist):
             enabled.add(feat)
     return enabled
 
-def ENABLED_FREKI_FEATS(config: DefaultConfigParser):
+def ENABLED_FREKI_FEATS(config: ConfigParser):
     return enabled_feats(config, 'freki_features', F_LIST)
 
-def ENABLED_TEXT_FEATS(config: DefaultConfigParser):
+def ENABLED_TEXT_FEATS(config: ConfigParser):
     return enabled_feats(config, 'text_features', T_LIST)
 
 

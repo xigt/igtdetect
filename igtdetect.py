@@ -524,8 +524,7 @@ class ClassifierWrapper(object):
     def __init__(self):
         self.c = LogisticRegression()
         self.dv = DictVectorizer(dtype=bool)
-        self.feat_selector = None
-        self.labels = []
+        self.feat_selector = SelectKBest(chi2, 'all')
 
 # -------------------------------------------
 # Perform feature extraction.
@@ -1054,11 +1053,13 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
     # Perform feature selection to limit to the top
     # 1,000 features.
 
-    feat_select = SelectKBest(chi2, 'all')
+    feat_select = cw.feat_selector
     if max_features > 0:
         n_features = min(vec.shape[-1], max_features)
         ERR_LOG.info('Selecting features to the top "{}" best'.format(n_features))
         feat_select = SelectKBest(chi2, n_features)
+
+    cw.feat_selector = feat_select
 
     feat_select.fit(vec, labels)
 
@@ -1084,8 +1085,37 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
     cw.c.fit(X, labels)
     ERR_LOG.log(NORM_LEVEL, 'Training finished in "{}" seconds.'.format(int(time.time() - start_training)))
 
-    cw.labels = cw.c.classes_
-    cw.feat_selector = feat_select
+    # -------------------------------------------
+    # Print out the feature weights...
+    # -------------------------------------------
+    debug_dir = kwargs.get('debug_dir', './debug')
+    if debug_on:
+        classinfo_dir = os.path.join(debug_dir, 'classifier_info')
+        os.makedirs(classinfo_dir, exist_ok=True)
+        classinfo_path = os.path.join(classinfo_dir, os.path.splitext(os.path.basename(classifier_path))[0]+'_weights.txt')
+        classinfo_f = open(classinfo_path, 'w', encoding='utf-8')
+
+        # Get the default weights for each class...
+        defaults = {c:cw.c.intercept_[i] for i, c in enumerate(cw.c.classes_)}
+
+        # Next, get the weights for each feature.
+        weights = {(f,c):cw.c.coef_[i][j] for j, f in enumerate(feat_names[selected_feats]) for i, c in enumerate(cw.c.classes_)}
+        sorted_weights = sorted(weights.items(), reverse=True, key=lambda x: x[1])
+
+
+        format_str = '{:<40}{:<10.6}{:>10}\n'
+        classinfo_f.write(format_str.format('feat_name', 'weight', 'cls_name'))
+
+        for clsname in sorted(cw.c.classes_):
+            classinfo_f.write(format_str.format('DEFAULT', defaults[clsname], clsname))
+        classinfo_f.write('- '*30+'\n')
+
+        for w_tup, weight in sorted_weights:
+            feat_name, clsname = w_tup
+            classinfo_f.write(format_str.format(feat_name, weight, clsname))
+
+        classinfo_f.close()
+
 
     ERR_LOG.log(NORM_LEVEL, 'Writing classifier out to "{}"'.format(classifier_path))
     with open(classifier_path, 'wb') as f:
@@ -1400,7 +1430,7 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         # -------------------------------------------
         for lineno, probs in zip(sorted(fr.featdict.keys()), classifications):
 
-            classification = list(zip(cw.labels, probs))
+            classification = list(zip(cw.c.classes_, probs))
 
             # Write the line number and classification probabilities to the debug file.
             if debug_on:

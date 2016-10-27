@@ -532,6 +532,7 @@ class ClassifierWrapper(object):
         self.c = LogisticRegression()
         self.dv = DictVectorizer(dtype=bool)
         self.feat_selector = SelectKBest(chi2, 'all')
+        self.labels = []
 
 # -------------------------------------------
 # Perform feature extraction.
@@ -1103,17 +1104,17 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
         classinfo_f = open(classinfo_path, 'w', encoding='utf-8')
 
         # Get the default weights for each class...
-        defaults = {c:cw.c.intercept_[i] for i, c in enumerate(cw.c.classes_)}
+        defaults = {c:cw.c.intercept_[i] for i, c in enumerate(cw.labels)}
 
         # Next, get the weights for each feature.
-        weights = {(f,c):cw.c.coef_[i][j] for j, f in enumerate(feat_names[selected_feats]) for i, c in enumerate(cw.c.classes_)}
+        weights = {(f,c):cw.c.coef_[i][j] for j, f in enumerate(feat_names[selected_feats]) for i, c in enumerate(cw.labels)}
         sorted_weights = sorted(weights.items(), reverse=True, key=lambda x: x[1])
 
 
         format_str = '{:<40}{:<10.6}{:>10}\n'
         classinfo_f.write(format_str.format('feat_name', 'weight', 'cls_name'))
 
-        for clsname in sorted(cw.c.classes_):
+        for clsname in sorted(cw.labels):
             classinfo_f.write(format_str.format('DEFAULT', defaults[clsname], clsname))
         classinfo_f.write('- '*30+'\n')
 
@@ -1123,6 +1124,10 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
 
         classinfo_f.close()
 
+    # -------------------------------------------
+    # Add the labels to the classifier wrapper
+    # -------------------------------------------
+    cw.labels = np.unique(labels)
 
     ERR_LOG.log(NORM_LEVEL, 'Writing classifier out to "{}"'.format(classifier_path))
     with BZ2File(classifier_path, 'wb') as f:
@@ -1401,6 +1406,9 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         fr = FrekiReader(open(path, 'r', encoding='utf-8'))
         measurements, labels = extract_feats_for_path(path, overwrite=overwrite, skip_noisy=True)
 
+        if not measurements:
+            continue
+
         # Transform the feature vector for use with the classifier...
         vec = cw.dv.transform(measurements)
 
@@ -1449,10 +1457,11 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         # Optionally, write out the raw classification distribution.
         # -------------------------------------------
         cur_span = []
+        total_detected = 0
 
         for lineno, probs in zip(sorted(fr.featdict.keys()), classifications):
 
-            classification = list(zip(cw.c.classes_, probs))
+            classification = list(zip(cw.labels, probs))
 
             # Write the line number and classification probabilities to the debug file.
             if debug_on:
@@ -1505,6 +1514,7 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
                     detected_f.write('\n'.join(cur_span))
                     detected_f.write('\n\n')
                     cur_span = []
+                    total_detected += 1
             else:
                 cur_span.append('{:<8}{}'.format(best_label, fr.get_line(lineno)))
 
@@ -1515,6 +1525,8 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
 
         if detected_dir:
             detected_f.close()
+            if total_detected == 0:
+                os.unlink(get_detected_path(path, detected_dir))
 
         if debug_on:
             raw_classification_f.close()
@@ -1726,7 +1738,7 @@ if __name__ == '__main__':
             alt_c.read(args.config)
             for sec in alt_c.sections():
                 for key in alt_c[sec].keys():
-                    setattr(alt_c, key, alt_c[sec][key])
+                    setattr(args, key, alt_c[sec][key])
 
     # -------------------------------------------
     # Debug

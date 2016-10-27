@@ -67,7 +67,7 @@ def GOLD_DIR(obj):
 
 # Directory in which to place output classified files
 def OUT_DIR(obj):
-    return getattr(obj, 'out_dir')
+    return getattr(obj, 'classified_dir')
 
 # Whether or not to output debugging information
 def DEBUG_ON(obj):

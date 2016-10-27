@@ -17,7 +17,10 @@ feat_dir = ./output/feats
 
 # This is where the labeled files output by the classifier will
 # be placed.
-out_dir = ./output/classified
+classified_dir = ./output/classified
+
+# Where to output the detected IGT instances.
+detected_dir = ./output/detected-igt
 
 # This is where the gold-standard freki files will be placed for
 # evaluation.

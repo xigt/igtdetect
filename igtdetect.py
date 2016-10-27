@@ -5,7 +5,7 @@ from bz2 import BZ2File
 from copy import copy, deepcopy
 from functools import partial
 from collections import defaultdict, Counter
-import glob, sys, math
+import glob, sys
 from io import TextIOBase
 from logging import StreamHandler
 from multiprocessing.pool import Pool
@@ -500,13 +500,19 @@ def _path_rename(path, ext):
 def get_feat_path(path):
     return os.path.join(FEAT_DIR(args), _path_rename(path, '_feats.txt'))
 
-def get_classifications_path(path):
+def get_raw_classification_path(path):
     return os.path.join(os.path.join(DEBUG_DIR(args), 'raw_classifications'), _path_rename(path, '_classifications.txt'))
 
-classified_suffix = '_classified.txt'
 
-def get_classified_path(path):
-    return os.path.join(OUT_DIR(args), _path_rename(path, classified_suffix))
+
+classified_suffix = '_classified.txt'
+detected_suffix = '_detected.txt'
+
+def get_classified_path(path, classified_dir):
+    return os.path.join(classified_dir, _path_rename(path, classified_suffix))
+
+def get_detected_path(path, detected_dir):
+    return os.path.join(detected_dir, _path_rename(path, detected_suffix))
 
 def get_gold_for_classified(path):
     return os.path.join(GOLD_DIR(args), os.path.basename(path).replace(classified_suffix, '.txt'))
@@ -1372,7 +1378,9 @@ class SpanCounter(object):
 # Testing (Apply Classifier to new Documents)
 # =============================================================================
 
-def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False, **kwargs):
+def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False,
+                  classified_dir=None, detected_dir=None,
+                  **kwargs):
     feat_paths = [get_feat_path(p) for p in filelist]
 
     if not feat_paths:
@@ -1411,18 +1419,28 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
             ERR_LOG.critical("The number of lines ({}) does not match the number of classifications ({}). Skipping file {}".format(f_len, c_len, path))
             continue
 
-        # Get ready to write the classified file out
-        classified_path = get_classified_path(path)
-        os.makedirs(OUT_DIR(args), exist_ok=True)
-        out_f = open(classified_path, 'w', encoding='utf-8')
+        # -------------------------------------------
+        # Get ready to write the classified IGT instances out.
+        # The "classified_dir" is for the full files, with "O"
+        # lines, the "detected_dir" is only for contiguous, non-O lines.
+        # -------------------------------------------
+        if classified_dir:
+            os.makedirs(classified_dir, exist_ok=True)
+            classified_f = open(get_classified_path(path, classified_dir), 'w', encoding='utf-8')
+
+        if detected_dir:
+            os.makedirs(detected_dir, exist_ok=True)
+            detected_f = open(get_detected_path(path, detected_dir), 'w', encoding='utf-8')
+
+        # -------------------------------------------
 
         working_block = None  # Keep track of which block the last block is so we can write out
 
         # This file will contain the raw labelings from the classifier.
         if debug_on:
-            os.makedirs(os.path.dirname(get_classifications_path(path)), exist_ok=True)
-            ERR_LOG.log(NORM_LEVEL, 'Writing out raw classifications "{}"'.format(get_classifications_path(path)))
-            classification_f = open(get_classifications_path(path), 'w')
+            os.makedirs(os.path.dirname(get_raw_classification_path(path)), exist_ok=True)
+            ERR_LOG.log(NORM_LEVEL, 'Writing out raw classifications "{}"'.format(get_raw_classification_path(path)))
+            raw_classification_f = open(get_raw_classification_path(path), 'w')
 
         # -------------------------------------------
         # Iterate through the returned classifications
@@ -1430,17 +1448,19 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         #
         # Optionally, write out the raw classification distribution.
         # -------------------------------------------
+        cur_span = []
+
         for lineno, probs in zip(sorted(fr.featdict.keys()), classifications):
 
             classification = list(zip(cw.c.classes_, probs))
 
             # Write the line number and classification probabilities to the debug file.
             if debug_on:
-                classification_f.write('{}:'.format(lineno))
+                raw_classification_f.write('{}:'.format(lineno))
                 for label, weight in classification:
-                    classification_f.write('\t{}  {:.3e}'.format(label, weight))
-                classification_f.write('\n')
-                classification_f.flush()
+                    raw_classification_f.write('\t{}  {:.3e}'.format(label, weight))
+                raw_classification_f.write('\n')
+                raw_classification_f.flush()
 
             # Get the block that contains this line.
             cur_block = fr.block_for_line(lineno)
@@ -1460,9 +1480,8 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
             # If we are using B+I labels, make sure to
             # strip them off before writing out the file.
             # -------------------------------------------
-            if USE_BI_LABELS(conf):
-                if best_label[0:2] in set(['I-','B-']):
-                    best_label = best_label[2:]
+            if best_label[0:2] in set(['I-','B-']):
+                best_label = best_label[2:]
 
             # Set the label for the line in the working block
             # before potentially writing it out.
@@ -1475,15 +1494,30 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
             #      the lines one at a time because it helps keep
             #      regular spacing between lines)
             if cur_block.block_id != working_block.block_id:
-                out_f.write('{}\n'.format(working_block))
+                if classified_dir:
+                    classified_f.write('{}\n'.format(working_block))
+
+
                 working_block = deepcopy(cur_block)
 
+            if best_label == 'O' and detected_dir:
+                if cur_span:
+                    detected_f.write('\n'.join(cur_span))
+                    detected_f.write('\n\n')
+                    cur_span = []
+            else:
+                cur_span.append('{:<8}{}'.format(best_label, fr.get_line(lineno)))
+
         # Write out the final block in the file.
-        out_f.write('{}\n'.format(working_block))
-        out_f.close()
+        if classified_dir:
+            classified_f.write('{}\n'.format(working_block))
+            classified_f.close()
+
+        if detected_dir:
+            detected_f.close()
 
         if debug_on:
-            classification_f.close()
+            raw_classification_f.close()
 
 
 
@@ -1732,7 +1766,7 @@ if __name__ == '__main__':
 
     def testeval(fl):
         test(fl)
-        classified_paths = [get_classified_path(p) for p in fl]
+        classified_paths = [get_classified_path(p, getattr(args, 'classified_dir')) for p in fl]
         eval(classified_paths)
 
     def traintesteval(fl, ep):

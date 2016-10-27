@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import statistics, abc, logging
 from argparse import ArgumentParser, ArgumentTypeError
+from bz2 import BZ2File
 from copy import copy, deepcopy
 from functools import partial
 from collections import defaultdict, Counter
@@ -1118,7 +1119,7 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
 
 
     ERR_LOG.log(NORM_LEVEL, 'Writing classifier out to "{}"'.format(classifier_path))
-    with open(classifier_path, 'wb') as f:
+    with BZ2File(classifier_path, 'wb') as f:
         pickle.dump(cw, f)
 
 
@@ -1379,9 +1380,10 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         sys.exit()
 
     # Load the saved classifier...
-    with open(classifier_path, 'rb') as cf:
-        cw = pickle.load(cf)
-        assert isinstance(cw, ClassifierWrapper), type(cw)
+    cf = BZ2File(classifier_path, 'r')
+    cw = pickle.load(cf)
+    cf.close()
+    assert isinstance(cw, ClassifierWrapper), type(cw)
 
     for path, feat_path in zip(filelist, feat_paths):
 

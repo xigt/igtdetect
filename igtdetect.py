@@ -1699,6 +1699,8 @@ if __name__ == '__main__':
     # TRAINING
     # -------------------------------------------
     train_p = subparsers.add_parser('train', parents=[common_parser, tt_parser])
+    train_p.add_argument('--use-bi-labels', type=int, default=1)
+    train_p.add_argument('--max-features', type=int, default=-1)
 
     # -------------------------------------------
     # TESTING

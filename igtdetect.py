@@ -32,6 +32,8 @@ import re
 # -------------------------------------------
 # Set up logging
 # -------------------------------------------
+from freki.serialize import FrekiDoc, FrekiLine
+
 NORM_LEVEL = 1000
 logging.addLevelName(NORM_LEVEL, 'NORMAL')
 ERR_LOG = logging.getLogger(name='ERRORS')
@@ -51,6 +53,7 @@ ERR_LOG.addHandler(errhandler)
 # -------------------------------------------
 TYPE_FREKI = 'freki'
 TYPE_TEXT = 'text'
+
 
 # -------------------------------------------
 # Readers for text/Freki Docs
@@ -76,9 +79,6 @@ class DocReader(Iterator):
         :rtype: Line
         """
         return self.linedict[lineno]
-
-
-
 
 
 # -------------------------------------------
@@ -140,6 +140,7 @@ class FrekiBlock(list):
         for line in self:
             ret_str += '{}:{}\n'.format(line.preamble(max_pre_len), line)
         return ret_str
+
 
 # =============================================================================
 # FrekiReader
@@ -208,7 +209,7 @@ class FrekiReader(DocReader):
             if len(self.llxs) > 1:
                 self.width_stdev = statistics.stdev(self.widths)
 
-        add_frekifeats(self)
+        get_frekifeats(self)
         self.seek(0)
 
     def most_common_font(self):
@@ -263,14 +264,14 @@ class FrekiReader(DocReader):
                 # Format the tag and flags
                 # -------------------------------------------
                 fulltag = pre_dict.get('tag', 'O')
-                flags   = fulltag.split('+')[1:]
-                tag     = fulltag.split('+')[0]
+                flags = fulltag.split('+')[1:]
+                tag = fulltag.split('+')[0]
 
                 # -------------------------------------------
                 # Deal with span IDs.
                 # -------------------------------------------
                 span_id = pre_dict.get('span_id')
-                prev_span_id = self.get_line(lineno-1).span_id if lineno > 1 else None
+                prev_span_id = self.get_line(lineno - 1).span_id if lineno > 1 else None
 
                 # If the line is not 'O' and does not have a span...
                 if 'O' not in tag and span_id is None:
@@ -282,7 +283,7 @@ class FrekiReader(DocReader):
                     # Otherwise, create a new span 's[n+1]', according
                     # to the number of already existing spans.
                     else:
-                        span_id = 's{}'.format(len(self._seen_spans)+1)
+                        span_id = 's{}'.format(len(self._seen_spans) + 1)
 
                 self._seen_spans.add(span_id)
 
@@ -338,7 +339,7 @@ class Line(str):
     """
 
     def __new__(cls, seq='', lineno: int = 0, fonts: tuple = None, label: str = None, flags: tuple = None,
-                bi_status = None, span_id = None):
+                bi_status=None, span_id=None):
 
         if fonts is None:
             fonts = tuple()
@@ -355,7 +356,8 @@ class Line(str):
         return l
 
     def __copy__(self):
-        l = Line(seq=self, lineno=self.lineno, fonts=self.fonts, label=self.label, flags=self.flags, bi_status = self.bi_status, span_id = self.span_id)
+        l = Line(seq=self, lineno=self.lineno, fonts=self.fonts, label=self.label, flags=self.flags,
+                 bi_status=self.bi_status, span_id=self.span_id)
         return l
 
     def search(self, pattern, flags=0):
@@ -376,7 +378,6 @@ class Line(str):
         return '{{:<{}}}'.format(length).format(pre)
 
 
-
 class TextReader(DocReader):
     def __next__(self):
         data = self.fh.__next__()
@@ -384,7 +385,7 @@ class TextReader(DocReader):
         return data
 
 
-def get_textfeats(line: Line) -> dict:
+def get_textfeats(line: FrekiLine) -> dict:
     """
     Given a line as input, return the text-based features
     available for that line.
@@ -435,30 +436,28 @@ def get_textfeats(line: Line) -> dict:
     return feats
 
 
-def add_frekifeats(r: DocReader):
-    for lineno in sorted(r.featdict.keys()):
+def get_frekifeats(line: FrekiLine):
+    feats = {}
 
-        feats = {}
+    # Use this function to check the
+    # feature constant name against the
+    # list of enabled features, and trigger
+    # the appropriate function if it's enabled.
+    def checkfeat(name, func):
+        nonlocal feats
+        if name in ENABLED_FREKI_FEATS(conf):
+            feats[name] = func(line)
 
-        # Use this function to check the
-        # feature constant name against the
-        # list of enabled features, and trigger
-        # the appropriate function if it's enabled.
-        def checkfeat(name, func):
-            nonlocal feats
-            if name in ENABLED_FREKI_FEATS(conf):
-                feats[name] = func(r, lineno)
+    # Apply each feature if it is enabled
+    checkfeat(F_IS_INDENTED, isindented)
+    checkfeat(F_IS_FIRST_PAGE, is_first_page)
+    checkfeat(F_PREV_LINE_SAME_BLOCK, prev_line_same_block)
+    checkfeat(F_NEXT_LINE_SAME_BLOCK, next_line_same_block)
+    checkfeat(F_HAS_NONSTANDARD_FONT, has_nondefault_font)
+    checkfeat(F_HAS_SMALLER_FONT, has_smaller_font)
+    checkfeat(F_HAS_LARGER_FONT, has_larger_font)
 
-        # Apply each feature if it is enabled
-        checkfeat(F_IS_INDENTED, isindented)
-        checkfeat(F_IS_FIRST_PAGE, is_first_page)
-        checkfeat(F_PREV_LINE_SAME_BLOCK, prev_line_same_block)
-        checkfeat(F_NEXT_LINE_SAME_BLOCK, next_line_same_block)
-        checkfeat(F_HAS_NONSTANDARD_FONT, has_nondefault_font)
-        checkfeat(F_HAS_SMALLER_FONT, has_smaller_font)
-        checkfeat(F_HAS_LARGER_FONT, has_larger_font)
-
-        r.featdict[lineno].update(feats)
+    return feats
 
 
 def get_all_line_feats(featdict, lineno) -> dict:
@@ -500,25 +499,51 @@ def _path_rename(path, ext):
 def get_feat_path(path):
     return os.path.join(FEAT_DIR(args), _path_rename(path, '_feats.txt'))
 
-def get_raw_classification_path(path):
-    return os.path.join(os.path.join(DEBUG_DIR(args), 'raw_classifications'), _path_rename(path, '_classifications.txt'))
 
+def get_raw_classification_path(path):
+    return os.path.join(os.path.join(DEBUG_DIR(args), 'raw_classifications'),
+                        _path_rename(path, '_classifications.txt'))
 
 
 classified_suffix = '_classified.txt'
 detected_suffix = '_detected.txt'
 
+
 def get_classified_path(path, classified_dir):
     return os.path.join(classified_dir, _path_rename(path, classified_suffix))
+
 
 def get_detected_path(path, detected_dir):
     return os.path.join(detected_dir, _path_rename(path, detected_suffix))
 
+
 def get_gold_for_classified(path):
     return os.path.join(GOLD_DIR(args), os.path.basename(path).replace(classified_suffix, '.txt'))
 
+
 def get_weight_path(path):
     return os.path.join(DEBUG_DIR(args), _path_rename(path, '_weights.txt'))
+
+
+# -------------------------------------------
+# Create an Object to Analyze a FrekiDoc
+# -------------------------------------------
+class FrekiAnalyzer(object):
+    def __init__(self):
+        self.textfeats = {}
+        self.widths = {}
+
+    @classmethod
+    def read_doc(cls, fd):
+        fa = FrekiAnalyzer()
+        for line in fd.lines():
+            fa.textfeats[line.lineno] = get_textfeats(line)
+            print(line.tag)
+        sys.exit()
+
+    @classmethod
+    def readf(cls, path):
+        return cls.read_doc(FrekiDoc.read(path))
 
 
 class ClassifierWrapper(object):
@@ -528,11 +553,13 @@ class ClassifierWrapper(object):
     responsible for keeping track of the feature-to-index mappings,
     and which features to use (via the "feat_selector")
     """
+
     def __init__(self):
         self.c = LogisticRegression()
         self.dv = DictVectorizer(dtype=bool)
         self.feat_selector = SelectKBest(chi2, 'all')
         self.labels = []
+
 
 # -------------------------------------------
 # Perform feature extraction.
@@ -564,9 +591,8 @@ def extract_feats(filelist, cw, overwrite=False, skip_noisy=True):
         l.release()
 
     for path in filelist:
-        p.apply_async(extract_feats_for_path, args=[path, overwrite, skip_noisy], callback=callback)
-        # callback(extract_feats_for_path(path, overwrite=overwrite, skip_noisy=skip_noisy))
-
+        # p.apply_async(extract_feats_for_path, args=[path, overwrite, skip_noisy], callback=callback)
+        callback(extract_feats_for_path(path, overwrite=overwrite, skip_noisy=skip_noisy))
 
     p.close()
     p.join()
@@ -583,6 +609,7 @@ def extract_feats(filelist, cw, overwrite=False, skip_noisy=True):
     # Turn the extracted feature dict into vectors for sklearn.
     # -------------------------------------------
     return measurements, labels
+
 
 def load_feats(path):
     """
@@ -604,6 +631,7 @@ def load_feats(path):
             measures.append(line_measures)
     return labels, measures
 
+
 def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
     """
     Perform feature extraction for a single file.
@@ -621,7 +649,6 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
 
     path_rel = os.path.abspath(path)
     feat_rel = os.path.abspath(feat_path)
-
 
     # -------------------------------------------
     # Create a list of measurements, and associated labels.
@@ -647,47 +674,39 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
 
         ERR_LOG.info('Opening file "{}" for feature extraction to file "{}"...'.format(path_rel, feat_rel))
 
-
         os.makedirs(os.path.dirname(feat_path), exist_ok=True)
         with open(feat_path, 'w', encoding='utf-8') as train_f:
-
-            with open(path, 'r', encoding='utf-8') as f:
-                # r = FrekiReader(f) if filetype == TYPE_FREKI else TextReader(f)
-                r = FrekiReader(f)
-
-                # Now, let's iterate through again and extract features.
-                for lineno in sorted(r.featdict.keys()):
-                    label = r.linedict[lineno].label
-
-                    # If the label contains an asterisk, that means
-                    # it is very noisy. Don't use it for either "O" or any
-                    # in-IGT label.
-                    if label.startswith('*'):
-                        if skip_noisy:
-                            continue
-                        else:
-                            label = label.replace('*', '')
-
-                    all_feats = get_all_line_feats(r.featdict, lineno)
-
-                    # Make sure to append an explicit "B" or "I" if
-                    # the B/I labels are used.
-                    if 'O' not in label:
-                        bi = r.get_line(lineno).bi_status
-                        if bi == 'b':
-                            label = 'B-{}'.format(label)
-                        elif bi == 'i':
-                            label = 'I-{}'.format(label)
+            fd = FrekiDoc.read(path)
 
 
-                    # Append the measurements for this line...
-                    measurements.append(all_feats)
+            # 1) Start by getting the features for this
+            #    particular line...
+            feat_dict = {}
+            for line in fd.lines():
+                feat_dict[line.lineno] = get_textfeats(line)
+                feat_dict[line.lineno].update(get_frekifeats(line))
 
-                    #...and its label
-                    labels.append(label)
+            # 2) Now, add the prev/next line data as necessary
+            for line in fd.lines():
+                # Skip noisy (preceded with '*') tagged lines
+                label = line.tag
+                if label.startswith('*'):
+                    if skip_noisy: continue
+                    else: label = label.replace('*', '')
 
+                if 'O' not in label:
+                    if line.span_id == line.doc.get_line(line.lineno-1).span_id:
+                        bi_status = 'I'
+                    else:
+                        bi_status = 'B'
 
-                    write_training_vector(all_feats, label, train_f)
+                    label = '{}-{}'.format(bi_status, label)
+
+                all_feats = get_all_line_feats(feat_dict, line.lineno)
+                measurements.append(all_feats)
+                labels.append(label)
+
+                write_training_vector(all_feats, label, train_f)
 
     return measurements, labels
 
@@ -712,33 +731,36 @@ def write_training_vector(featdict, label, out: TextIOBase = sys.stdout):
 # =============================================================================
 # FEATURES
 # =============================================================================
-def isindented(r: FrekiReader, lineno: int):
-    return r.left_indent and (r.llxs[lineno] > r.left_indent)
+def isindented(line: FrekiLine):
+    # The doc-wide indent...
+    doc_indent = line.block.doc.llx()
 
+    # This block's indent
+    block_indent = line.block.llx
 
-def has_smaller_font(r: FrekiReader, lineno: int):
-    line = r.linedict[lineno]
-    for font, size in line.fonts:
-        if size < r.most_common_size(font):
+    return block_indent > doc_indent
+
+def has_smaller_font(line: FrekiLine):
+    def_font_size = statistics.mode(line.doc.fonts).f_size
+
+    for font in line.fonts:
+        if font.f_size < def_font_size:
             return True
     return False
 
 
-def has_larger_font(r: FrekiReader, lineno: int):
-    line = r.linedict[lineno]
-    for font, size in line.fonts:
-        if size > r.most_common_size(font):
+
+def has_larger_font(line: FrekiLine):
+    def_font_size = statistics.mode(line.doc.fonts).f_size
+    for font in line.fonts:
+        if font.f_size > def_font_size:
             return True
     return False
 
-
-def has_nondefault_font(r: FrekiReader, lineno: int):
-    line = r.linedict[lineno]
-    mcf = r.most_common_font()
-    for font, size in line.fonts:
-        if font != mcf:
-            return True
-    return False
+def has_nondefault_font(line: FrekiLine):
+    # Get the "default" font
+    def_font = set([statistics.mode(line.doc.fonts)])
+    return bool(set(line.fonts) - def_font)
 
 
 def thinner_than_usual(r: FrekiReader):
@@ -763,32 +785,33 @@ def has_parenthetical(line: str):
 year_str = '(?:1[8-9][0-9][0-9]|20[0-1][0-9])'
 
 
-def has_citation(line: str):
+def has_citation(line: FrekiLine):
     return bool(line.search('\([^,]+, {}\)'.format(year_str)))
 
 
-def has_year(line: str):
+def has_year(line: FrekiLine):
     return bool(line.search(year_str))
 
 
-def has_asterisk(line: Line):
+def has_asterisk(line: FrekiLine):
     return '*' in line
 
 
-def has_underscore(line: Line):
+def has_underscore(line: FrekiLine):
     return '_' in line
 
 
-def has_bracketing(line: Line):
+def has_bracketing(line: FrekiLine):
     return bool(line.search('\[.*\]'))
 
 
-def has_numbering(line: Line):
+def has_numbering(line: FrekiLine):
     return bool(line.search('^\s*\(?[0-9a-z]+[\)\.]'))
 
 
-def has_leading_whitespace(line: Line):
+def has_leading_whitespace(line: FrekiLine):
     return bool(line.search('^\s+'))
+
 
 # -------------------------------------------
 # Various Unicode Ranges
@@ -821,6 +844,7 @@ def has_accented_latin(line: Line):
 def has_korean(line: Line):
     return bool(line.search('[\uAC00-\uD7A3]', flags=re.U))
 
+
 def has_unicode(line: Line):
     cyr = has_cyrillic(line)
     dia = has_diacritic(line)
@@ -830,6 +854,7 @@ def has_unicode(line: Line):
     acc = has_accented_latin(line)
     return cyr or dia or grk or jpn or acc or kor
 
+
 # -------------------------------------------
 
 word_re = re.compile('(\w+)', flags=re.UNICODE)
@@ -838,6 +863,7 @@ word_re = re.compile('(\w+)', flags=re.UNICODE)
 def clean_word(s):
     w_match = word_re.findall(s)
     return w_match
+
 
 # -------------------------------------------
 # OOV Rate Functions
@@ -850,11 +876,14 @@ def clean_word(s):
 def med_en_oov_rate(line: Line):
     return HIGH_OOV_THRESH(conf) > oov_rate(en_wl, line) > MED_OOV_THRESH(conf)
 
+
 def high_en_oov_rate(line: Line):
     return oov_rate(en_wl, line) >= HIGH_OOV_THRESH(conf)
 
+
 def high_gls_oov_rate(line: Line):
     return oov_rate(gls_wl, line) > HIGH_OOV_THRESH(conf)
+
 
 def high_met_oov_rate(line: Line):
     return oov_rate(gls_wl, line) > HIGH_OOV_THRESH(conf)
@@ -881,7 +910,10 @@ def oov_rate(wl: WordlistFile, line: Line):
             oov_rate = oov_words[False] / c_total
             return oov_rate
 
+
 langs = set([])
+
+
 def init_langnames():
     global langs
     if len(langs) == 0:
@@ -892,6 +924,7 @@ def init_langnames():
                     langname = langname.replace('[', '')
                     if len(langname) >= 5:
                         langs.add(langname.lower())
+
 
 lang_re = re.compile('({})'.format('|'.join(langs), flags=re.I))
 
@@ -906,17 +939,22 @@ def has_quotation(line: Line):
     return bool(line.search('[\'\"‘`“]\S+\s+.+[\'\"’”]'))
 
 
-def is_first_page(r: FrekiReader, lineno: int):
-    block = r.block_for_line(lineno)
-    return block.page == 1
+def is_first_page(line: FrekiLine):
+    return line.block.page == 1
 
+def prev_line_same_block(line: FrekiLine):
+    prev_line = line.block.doc.get_line(line.lineno-1)
+    if prev_line is None:
+        return False
+    else:
+        return prev_line.block.block_id == line.block.block_id
 
-def prev_line_same_block(r: FrekiReader, lineno: int):
-    return r.block_ids.get(lineno - 1) == r.block_ids.get(lineno)
-
-
-def next_line_same_block(r: FrekiReader, lineno: int):
-    return r.block_ids.get(lineno + 1) == r.block_ids.get(lineno)
+def next_line_same_block(line: FrekiLine):
+    next_line = line.block.doc.get_line(line.lineno+1)
+    if next_line is None:
+        return False
+    else:
+        return next_line.block.block_id == line.block.block_id
 
 
 # -------------------------------------------
@@ -950,7 +988,6 @@ class ClassifierInfo():
 
     def write_features(self, out=sys.stdout, limit=30):
 
-
         vals = []
         defaults = []
         for feat in self.featdict.keys():
@@ -974,7 +1011,7 @@ class ClassifierInfo():
         format_str = '{{:{}}}\t{{:{}}}\t{{:<5.6}}\n'.format(longest_featname, longest_label)
 
         out.write(format_str.format('feature', 'label', 'weight'))
-        linesep = '-' * (longest_featname + longest_label + 10)+'\n'
+        linesep = '-' * (longest_featname + longest_label + 10) + '\n'
         out.write(linesep)
         for d in defaults:
             out.write(format_str.format(*d))
@@ -1039,7 +1076,8 @@ def combine_feat_files(pathlist, out_path=None):
 # =============================================================================
 # Train the classifier given a list of files
 # =============================================================================
-def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_path=None, debug_on=False, max_features = None, **kwargs):
+def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_path=None, debug_on=False,
+                     max_features=None, **kwargs):
     """
     Train the classifier based on the input files in filelist.
 
@@ -1072,8 +1110,8 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
     feat_select.fit(vec, labels)
 
     # Print out the pruned features...
-    selected_feats = feat_select.get_support() # Boolean array of the selected features.
-    feat_names     = np.array(cw.dv.get_feature_names())
+    selected_feats = feat_select.get_support()  # Boolean array of the selected features.
+    feat_names = np.array(cw.dv.get_feature_names())
     ERR_LOG.info('Reduced feature count from {} to {}'.format(vec.shape[-1], np.count_nonzero(selected_feats)))
 
     # Reduce the [sample, feature] matrix down to the selected features...
@@ -1089,7 +1127,7 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
     if debug_on:
         cw.c.set_params(verbose=True)
 
-    cw.c.set_params(n_jobs=8) # Use all cpu cores
+    cw.c.set_params(n_jobs=8)  # Use all cpu cores
     cw.c.fit(X, labels)
     ERR_LOG.log(NORM_LEVEL, 'Training finished in "{}" seconds.'.format(int(time.time() - start_training)))
 
@@ -1100,23 +1138,24 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
     if debug_on:
         classinfo_dir = os.path.join(debug_dir, 'classifier_info')
         os.makedirs(classinfo_dir, exist_ok=True)
-        classinfo_path = os.path.join(classinfo_dir, os.path.splitext(os.path.basename(classifier_path))[0]+'_weights.txt')
+        classinfo_path = os.path.join(classinfo_dir,
+                                      os.path.splitext(os.path.basename(classifier_path))[0] + '_weights.txt')
         classinfo_f = open(classinfo_path, 'w', encoding='utf-8')
 
         # Get the default weights for each class...
-        defaults = {c:cw.c.intercept_[i] for i, c in enumerate(cw.labels)}
+        defaults = {c: cw.c.intercept_[i] for i, c in enumerate(cw.labels)}
 
         # Next, get the weights for each feature.
-        weights = {(f,c):cw.c.coef_[i][j] for j, f in enumerate(feat_names[selected_feats]) for i, c in enumerate(cw.labels)}
+        weights = {(f, c): cw.c.coef_[i][j] for j, f in enumerate(feat_names[selected_feats]) for i, c in
+                   enumerate(cw.labels)}
         sorted_weights = sorted(weights.items(), reverse=True, key=lambda x: x[1])
-
 
         format_str = '{:<40}{:<10.6}{:>10}\n'
         classinfo_f.write(format_str.format('feat_name', 'weight', 'cls_name'))
 
         for clsname in sorted(cw.labels):
             classinfo_f.write(format_str.format('DEFAULT', defaults[clsname], clsname))
-        classinfo_f.write('- '*30+'\n')
+        classinfo_f.write('- ' * 30 + '\n')
 
         for w_tup, weight in sorted_weights:
             feat_name, clsname = w_tup
@@ -1134,13 +1173,10 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
         pickle.dump(cw, f)
 
 
-
-
 # -------------------------------------------
 # DO the classification
 # -------------------------------------------
 def classify_doc(path, classifier, classifier_info):
-
     # -------------------------------------------
     # We don't care about the labels that are currently
     # on the document. However, due to what I'd describe
@@ -1188,7 +1224,7 @@ def classify_doc(path, classifier, classifier_info):
     if p.returncode:
         raise Exception("There was an error running the classifier.")
 
-    os.unlink(temp_in.name) # Delete the temporary output file with the replaced labels
+    os.unlink(temp_in.name)  # Delete the temporary output file with the replaced labels
 
     return classifications
 
@@ -1424,7 +1460,9 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         c_len = len(classifications)
 
         if f_len != c_len:
-            ERR_LOG.critical("The number of lines ({}) does not match the number of classifications ({}). Skipping file {}".format(f_len, c_len, path))
+            ERR_LOG.critical(
+                "The number of lines ({}) does not match the number of classifications ({}). Skipping file {}".format(
+                    f_len, c_len, path))
             continue
 
         # -------------------------------------------
@@ -1489,7 +1527,7 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
             # If we are using B+I labels, make sure to
             # strip them off before writing out the file.
             # -------------------------------------------
-            if best_label[0:2] in set(['I-','B-']):
+            if best_label[0:2] in set(['I-', 'B-']):
                 best_label = best_label[2:]
 
             # Set the label for the line in the working block
@@ -1505,7 +1543,6 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
             if cur_block.block_id != working_block.block_id:
                 if classified_dir:
                     classified_f.write('{}\n'.format(working_block))
-
 
                 working_block = deepcopy(cur_block)
 
@@ -1530,7 +1567,6 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
 
         if debug_on:
             raw_classification_f.close()
-
 
 
 def eval_files(filelist, out_path, csv, gold_dir=None, **kwargs):
@@ -1567,16 +1603,19 @@ def eval_files(filelist, out_path, csv, gold_dir=None, **kwargs):
     delimiter = '\t'
     if csv:
         delimiter = ','
-    out_f.write(sc.matrix()+'\n')
+    out_f.write(sc.matrix() + '\n')
 
     out_f.write('----- Labels -----\n')
     out_f.write(' Classifiation Acc: {:.2f}\n'.format(sc.precision()))
     out_f.write('       Non-O P/R/F: {}\n\n'.format(delimiter.join(['{:.2f}'.format(x) for x in sc.prf(['O'])])))
     out_f.write('----- Spans ------\n')
-    out_f.write('  Exact-span P/R/F: {}\n'.format(delimiter.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=True)])))
-    out_f.write('Partial-span P/R/F: {}\n'.format(delimiter.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=False)])))
-    
+    out_f.write(
+        '  Exact-span P/R/F: {}\n'.format(delimiter.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=True)])))
+    out_f.write(
+        'Partial-span P/R/F: {}\n'.format(delimiter.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=False)])))
+
     out_f.close()
+
 
 def eval_file(eval_path, gold_path, sc=None, outstream=sys.stdout):
     """
@@ -1586,7 +1625,9 @@ def eval_file(eval_path, gold_path, sc=None, outstream=sys.stdout):
     gold_fr = FrekiReader(open(gold_path, 'r'), skip_feats=True)
 
     if len(eval_fr) != len(gold_fr):
-        ERR_LOG.error('The evaluation file "{}" and the gold file "{}" appear to have a different number of lines. Evaluation aborted.'.format(eval_path, gold_path))
+        ERR_LOG.error(
+            'The evaluation file "{}" and the gold file "{}" appear to have a different number of lines. Evaluation aborted.'.format(
+                eval_path, gold_path))
     else:
         if sc is None:
             sc = SpanCounter()
@@ -1597,11 +1638,13 @@ def eval_file(eval_path, gold_path, sc=None, outstream=sys.stdout):
             sc.add_line(lineno, gold_label, eval_label)
 
         return sc
-        outstream.write(sc.matrix()+'\n\n')
+        outstream.write(sc.matrix() + '\n\n')
         outstream.write(' Classifiation Acc: {:.2f}\n'.format(sc.precision()))
         outstream.write('       Non-O P/R/F: {}\n'.format(','.join(['{:.2f}'.format(x) for x in sc.prf(['O'])])))
-        outstream.write('  Exact-span P/R/F: {}\n'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=True)])))
-        outstream.write('Partial-span P/R/F: {}\n'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=False)])))
+        outstream.write(
+            '  Exact-span P/R/F: {}\n'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=True)])))
+        outstream.write(
+            'Partial-span P/R/F: {}\n'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=False)])))
 
 
 def flatten(seq):
@@ -1621,7 +1664,9 @@ def flatten(seq):
 def globfiles(pathname):
     g = glob.glob(pathname)
     if not g:
-        raise ArgumentTypeError('No files found matching pattern "{}".\nCheck that the path is valid and that containing directories exist.'.format(pathname))
+        raise ArgumentTypeError(
+            'No files found matching pattern "{}".\nCheck that the path is valid and that containing directories exist.'.format(
+                pathname))
     else:
         paths = []
         for path in g:
@@ -1630,11 +1675,14 @@ def globfiles(pathname):
             else:
                 paths.append(path)
         return paths
+
+
 # -------------------------------------------
 
 #
 def split_words(sent):
     return [re.sub('[#:]', '', w.lower()) for w in re.split('[\.\-\s]', sent)]
+
 
 # =============================================================================
 # MAIN
@@ -1677,7 +1725,8 @@ if __name__ == '__main__':
     # that require the classifier to be specified
     # -------------------------------------------
     tt_parser = ArgumentParser(add_help=False)
-    tt_parser.add_argument('--classifier-path', required=classifier_required, help='Path to the saved classifier model.')
+    tt_parser.add_argument('--classifier-path', required=classifier_required,
+                           help='Path to the saved classifier model.')
     tt_parser.add_argument('--in-files', help='Path to input files used for training or testing.', type=globfiles)
 
     # Parser for combining evaluation arguments.
@@ -1686,7 +1735,6 @@ if __name__ == '__main__':
     ev_parser.add_argument('--csv', help='Format the output as CSV.')
     ev_parser.add_argument('--eval-files', help='Files to evaluate against', required=True, type=globfiles)
     ev_parser.add_argument('--gold-dir', default=conf.get('paths', 'gold_dir'))
-
 
     # -------------------------------------------
     # Set up the subcommands
@@ -1758,10 +1806,8 @@ if __name__ == '__main__':
         gls_wl = GL_WL(conf)
         met_wl = MT_WL(conf)
 
-
-
-    filelist   = flatten(getattr(args, 'in_files', []))
-    eval_list  = flatten(getattr(args, 'eval_files', []))
+    filelist = flatten(getattr(args, 'in_files', []))
+    eval_list = flatten(getattr(args, 'eval_files', []))
 
 
     def train(fl):
@@ -1769,19 +1815,23 @@ if __name__ == '__main__':
         measurements, labels = extract_feats(fl, cw, overwrite=args.overwrite, skip_noisy=True)
         train_classifier(cw, measurements, labels, **vars(args))
 
+
     def test(fl):
         ERR_LOG.log(NORM_LEVEL, "Beginning classification...")
         classify_docs(fl, **vars(args))
         ERR_LOG.log(NORM_LEVEL, "Classification complete.")
 
+
     def eval(fl):
         ERR_LOG.log(NORM_LEVEL, "Beginning evaluation...")
         eval_files(fl, **vars(args))
+
 
     def testeval(fl):
         test(fl)
         classified_paths = [get_classified_path(p, getattr(args, 'classified_dir')) for p in fl]
         eval(classified_paths)
+
 
     def traintesteval(fl, ep):
         train(fl)
@@ -1789,8 +1839,13 @@ if __name__ == '__main__':
 
 
     # Switch between the commands
-    if args.subcommand == 'train': train(filelist)
-    elif args.subcommand == 'test': test(filelist)
-    elif args.subcommand == 'eval': eval(eval_list)
-    elif args.subcommand == 'testeval': testeval(filelist)
-    elif args.subcommand == 'traintesteval': traintesteval(filelist, eval_list)
+    if args.subcommand == 'train':
+        train(filelist)
+    elif args.subcommand == 'test':
+        test(filelist)
+    elif args.subcommand == 'eval':
+        eval(eval_list)
+    elif args.subcommand == 'testeval':
+        testeval(filelist)
+    elif args.subcommand == 'traintesteval':
+        traintesteval(filelist, eval_list)

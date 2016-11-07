@@ -2,6 +2,7 @@
 import statistics, abc, logging
 from argparse import ArgumentParser, ArgumentTypeError
 from bz2 import BZ2File
+from collections import OrderedDict
 from copy import copy, deepcopy
 from functools import partial
 from collections import defaultdict, Counter, namedtuple
@@ -889,6 +890,8 @@ def assign_spans(fd):
                 num_spans += 1
 
             line.span_id = 's{}'.format(num_spans)
+        else:
+            line.span_id = None
 
         last_tag = line.tag
 
@@ -947,8 +950,82 @@ def classify_doc(path, classifier, classifier_info):
 
     return classifications
 
+# =============================================================================
+# Evaluation Calculations
+# =============================================================================
+def exact_span_matches(eval_spans: OrderedDict, gold_spans: OrderedDict):
+    """
+    The exact span matches are the intersections between
+    """
+    return len(set(eval_spans.values()) & set(gold_spans.values()))
 
-class SpanCounter(object):
+def f_measure(p, r):
+    return 2 * (p*r)/(p+r) if (p+r) > 0 else 0
+
+def partial_matches(eval_spans: OrderedDict, gold_spans: OrderedDict, mode):
+    """
+    The partial span precision is calculated by the number of system spans which overlap
+    in some way with a system span.
+    """
+    matches = 0
+
+    if mode == 'precision':
+        for sys_start, sys_stop in [(s[0], s[-1]) for s in eval_spans.values()]:
+            for gold_start, gold_stop in [(s[0], s[-1]) for s in gold_spans.values()]:
+
+                # We define a partial match by whether either the start or stop index of
+                # the system span occurs within the [start,stop] range of at least one gold span.
+                if (gold_stop >= sys_start >= gold_start) or (gold_stop >= sys_stop >= gold_start):
+                    matches += 1
+                    break
+    elif mode == 'recall':
+        for gold_start, gold_stop in [(s[0], s[-1]) for s in gold_spans.values()]:
+            for sys_start, sys_stop in [(s[0], s[-1]) for s in eval_spans.values()]:
+                if (sys_stop >= gold_start >= sys_start) or (sys_stop >= gold_stop >= sys_start):
+                    matches += 1
+                    break
+
+    return matches
+
+
+class Evaluator(object):
+    def __init__(self):
+        self.se = SpanEvaluator()
+        self.le = LabelEvaluator()
+
+class SpanEvaluator(object):
+    def __init__(self):
+        self.exact_matches = 0
+
+        # Matches are calculated differently for
+        # precision and recall, since otherwise
+        # recall could be >1.0
+        self.partial_precision_matches = 0
+        self.partial_recall_matches = 0
+
+        self.gold_spans = 0
+        self.system_spans = 0
+
+    def add_spans(self, eval_spans, gold_spans):
+        self.exact_matches += exact_span_matches(eval_spans, gold_spans)
+        self.partial_precision_matches += partial_matches(eval_spans, gold_spans, 'precision')
+        self.partial_recall_matches += partial_matches(eval_spans, gold_spans, 'recall')
+
+        self.gold_spans += len(gold_spans)
+        self.system_spans += len(eval_spans)
+
+    def exact_precision(self): return self.exact_matches / self.system_spans
+    def exact_recall(self): return self.exact_matches / self.gold_spans
+    def exact_fmeasure(self): return f_measure(self.exact_precision(), self.exact_recall())
+    def exact_prf(self): return self.exact_precision(),self.exact_recall(),self.exact_fmeasure()
+
+    def partial_precision(self): return self.partial_precision_matches / self.system_spans
+    def partial_recall(self): return self.partial_recall_matches / self.gold_spans
+    def partial_fmeasure(self): return f_measure(self.partial_precision(), self.partial_recall())
+    def partial_prf(self): return self.partial_precision(), self.partial_recall(), self.partial_fmeasure()
+
+
+class LabelEvaluator(object):
     """
     This is a utility class that helps calculate
     performance over spans of IGT lines, rather
@@ -957,96 +1034,17 @@ class SpanCounter(object):
     """
 
     def __init__(self):
-        self.last_gold = 'O'
-        self.last_guess = 'O'
-
-        self.guess_spans = set()
-        self.gold_spans = set()
-
-        self.cur_guess_span = []
-        self.cur_gold_span = []
-
         self._matrix = defaultdict(partial(defaultdict, int))
 
-    def exact_matches(self):
-        return len(self.guess_spans & self.gold_spans)
+                           # Matches,System,Gold
 
-    def span_prf(self, exact=True):
-        return (self.span_precision(exact), self.span_recall(exact), self.span_fmeasure(exact))
 
-    def span_precision(self, exact=True):
-        if not exact:
-            return self.partial_precision()
-        else:
-            den = len(self.guess_spans)
-            return self.exact_matches() / den if den > 0 else 0
 
-    def span_recall(self, exact=True):
-        if not exact:
-            return self.partial_recall()
-        else:
-            den = len(self.gold_spans)
-            return self.exact_matches() / den if den > 0 else 0
 
-    def span_fmeasure(self, exact=True):
-        denom = (self.span_precision(exact) + self.span_recall(exact))
-        if denom == 0:
-            return 0
-        else:
-            return 2 * (self.span_precision(exact) * self.span_recall(exact)) / denom
-
-    def partial_recall(self):
-        """
-        The partial span recall is calculated by the number of gold spans for which a match
-        is found among the system outputs.
-
-        (There could be multiple system spans which overlap with the gold span,
-        we simply care that one of them overlaps).
-        :return:
-        """
-        matches = 0
-        for gold_start, gold_stop in [(s[0], s[-1]) for s in self.gold_spans]:
-            for sys_start, sys_stop in [(s[0], s[-1]) for s in self.guess_spans]:
-                if (sys_stop >= gold_start >= sys_start) or (sys_stop >= gold_stop >= sys_start):
-                    matches += 1
-                    break
-        return matches / len(self.gold_spans) if self.gold_spans else 0
-
-    def partial_precision(self):
-        """
-        The partial span precision is calculated by the number of system spans which overlap
-        in some way with a system span.
-        :return:
-        """
-        matches = 0
-
-        for sys_start, sys_stop in [(s[0], s[-1]) for s in self.guess_spans]:
-            for gold_start, gold_stop in [(s[0], s[-1]) for s in self.gold_spans]:
-
-                # We define a partial match by whether either the start or stop index of
-                # the system span occurs within the [start,stop] range of at least one gold span.
-                if (gold_stop >= sys_start >= gold_start) or (gold_stop >= sys_stop >= gold_start):
-                    matches += 1
-                    break
-
-        return matches / len(self.guess_spans) if self.guess_spans else 0
-
-    def add_line(self, lineno, gold, guess):
+    def add_eval_pair(self, gold, guess):
         """
         For a given line number, catalog it.
         """
-        if guess != 'O':
-            self.cur_guess_span.append(lineno)
-        elif guess == 'O' and self.last_guess != 'O':
-            self.guess_spans.add(tuple(self.cur_guess_span))
-            self.cur_guess_span = []
-
-        if gold != 'O':
-            self.cur_gold_span.append(lineno)
-        elif gold == 'O' and self.last_gold != 'O':
-            self.gold_spans.add(tuple(self.cur_gold_span))
-            self.cur_gold_span = []
-
         self._matrix[gold][guess] += 1
 
         self.last_guess = guess
@@ -1264,6 +1262,8 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         if classified_dir:
             assign_spans(fa.doc)
             classified_f.write(str(fa.doc))
+            print(fa.doc.spans())
+            sys.exit()
             classified_f.close()
 
         if detected_dir:
@@ -1297,28 +1297,37 @@ def eval_files(filelist, out_path, csv, gold_dir=None, **kwargs):
         sys.exit(2)
 
     # Create the counter to iterate over all the files.
-    sc = SpanCounter()
+
+    ev = Evaluator()
+    old_se = SpanEvaluator() # <-- for evaluating old-style (autogenerated) spans
+
     for eval_path in filelist:
         gold_path = get_gold_for_classified(eval_path)
         if not os.path.exists(gold_path):
             ERR_LOG.warning('No corresponding gold file was found for the evaluation file "{}"'.format(eval_path))
         else:
-            eval_file(eval_path, gold_path, sc=sc)
+            eval_file(eval_path, gold_path, ev=ev, old_se=old_se)
 
     # Now, write out the sc results.
     delimiter = '\t'
     if csv:
         delimiter = ','
-    out_f.write(sc.matrix() + '\n')
+    out_f.write(ev.le.matrix() + '\n')
 
     out_f.write('----- Labels -----\n')
-    out_f.write(' Classifiation Acc: {:.2f}\n'.format(sc.precision()))
-    out_f.write('       Non-O P/R/F: {}\n\n'.format(delimiter.join(['{:.2f}'.format(x) for x in sc.prf(['O'])])))
+    out_f.write(' Classifiation Acc: {:.2f}\n'.format(ev.le.precision()))
+    out_f.write('       Non-O P/R/F: {}\n\n'.format(delimiter.join(['{:.2f}'.format(x) for x in ev.le.prf(['O'])])))
     out_f.write('----- Spans ------\n')
     out_f.write(
-        '  Exact-span P/R/F: {}\n'.format(delimiter.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=True)])))
+        '  Exact-span P/R/F: {}\n'.format(delimiter.join(['{:.2f}'.format(x) for x in ev.se.exact_prf()])))
     out_f.write(
-        'Partial-span P/R/F: {}\n'.format(delimiter.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=False)])))
+        'Partial-span P/R/F: {}\n'.format(delimiter.join(['{:.2f}'.format(x) for x in ev.se.partial_prf()])))
+    out_f.write('\n--- Auto-Spans ---\n')
+    out_f.write(
+        '  Exact-span P/R/F: {}\n'.format(delimiter.join(['{:.2f}'.format(x) for x in old_se.exact_prf()])))
+    out_f.write(
+        'Partial-span P/R/F: {}\n'.format(delimiter.join(['{:.2f}'.format(x) for x in old_se.partial_prf()])))
+
 
     out_f.close()
 
@@ -1332,7 +1341,7 @@ def fix_label_flags_multi(label):
     return label
 
 
-def eval_file(eval_path, gold_path, sc=None, outstream=sys.stdout):
+def eval_file(eval_path, gold_path, ev=None, old_se=None, outstream=sys.stdout):
     """
     Look for the filename that matches the specified file
     """
@@ -1344,23 +1353,40 @@ def eval_file(eval_path, gold_path, sc=None, outstream=sys.stdout):
             'The evaluation file "{}" and the gold file "{}" appear to have a different number of lines. Evaluation aborted.'.format(
                 eval_path, gold_path))
     else:
-        if sc is None:
-            sc = SpanCounter()
+        if ev is None:
+            ev = Evaluator()
+        if old_se is None:
+            old_se = SpanEvaluator()
 
+        # -------------------------------------------
+        # Compare the labels across lines.
+        # -------------------------------------------
         for line in eval_fd.lines():
             eval_label = fix_label_flags_multi(eval_fd.get_line(line.lineno).tag)
             gold_label = fix_label_flags_multi(gold_fd.get_line(line.lineno).tag)
+            ev.le.add_eval_pair(gold_label, eval_label)
 
-            sc.add_line(line.lineno, gold_label, eval_label)
+        # -------------------------------------------
+        # Compare spans
+        # -------------------------------------------
+        gold_spans = gold_fd.spans()
+        eval_spans = eval_fd.spans()
 
-        return sc
-        outstream.write(sc.matrix() + '\n\n')
-        outstream.write(' Classifiation Acc: {:.2f}\n'.format(sc.precision()))
-        outstream.write('       Non-O P/R/F: {}\n'.format(','.join(['{:.2f}'.format(x) for x in sc.prf(['O'])])))
-        outstream.write(
-            '  Exact-span P/R/F: {}\n'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=True)])))
-        outstream.write(
-            'Partial-span P/R/F: {}\n'.format(','.join(['{:.2f}'.format(x) for x in sc.span_prf(exact=False)])))
+        ev.se.add_spans(eval_spans, gold_spans)
+
+        # -------------------------------------------
+        # Do old-style comparison, ignoring span_id and
+        # assigning span id to non-contiguous...
+        # -------------------------------------------
+        assign_spans(gold_fd)
+        assign_spans(eval_fd)
+
+        old_style_gold_spans = gold_fd.spans()
+        old_style_eval_spans = eval_fd.spans()
+
+        old_se.add_spans(old_style_eval_spans, old_style_gold_spans)
+
+        return ev, old_se
 
 
 def flatten(seq):

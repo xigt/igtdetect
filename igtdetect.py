@@ -4,7 +4,7 @@ from argparse import ArgumentParser, ArgumentTypeError
 from bz2 import BZ2File
 from copy import copy, deepcopy
 from functools import partial
-from collections import defaultdict, Counter
+from collections import defaultdict, Counter, namedtuple
 import glob, sys
 from io import TextIOBase
 from logging import StreamHandler
@@ -19,6 +19,7 @@ import numpy as np
 from multiprocessing import Lock
 
 import time
+
 from sklearn.feature_extraction import DictVectorizer
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.linear_model import LogisticRegression
@@ -26,13 +27,12 @@ from sklearn.linear_model import LogisticRegression
 from subprocess import Popen, PIPE
 
 from env import *
-from collections import Iterator
 import re
 
 # -------------------------------------------
 # Set up logging
 # -------------------------------------------
-from freki.serialize import FrekiDoc, FrekiLine
+from freki.serialize import FrekiDoc, FrekiLine, FrekiBlock, FrekiFont
 
 NORM_LEVEL = 1000
 logging.addLevelName(NORM_LEVEL, 'NORMAL')
@@ -43,7 +43,7 @@ stdhandler = StreamHandler(sys.stdout)
 errhandler = StreamHandler(sys.stderr)
 
 stdhandler.setLevel(NORM_LEVEL)
-errhandler.setLevel(logging.INFO)
+errhandler.setLevel(NORM_LEVEL)
 
 STD_LOG.addHandler(stdhandler)
 ERR_LOG.addHandler(errhandler)
@@ -55,91 +55,6 @@ TYPE_FREKI = 'freki'
 TYPE_TEXT = 'text'
 
 
-# -------------------------------------------
-# Readers for text/Freki Docs
-# -------------------------------------------
-class DocReader(Iterator):
-    @abc.abstractmethod
-    def __init__(self, fh):
-        self.fh = fh
-        self.lineno = 0
-        self.featdict = {}
-        self.linedict = {}
-
-        for line in self:
-            self.featdict[self.lineno] = get_textfeats(line)
-            self.linedict[self.lineno] = line
-        self.seek(0)
-
-    def seek(self, offset, whence=0):
-        self.fh.seek(offset, whence)
-
-    def get_line(self, lineno):
-        """
-        :rtype: Line
-        """
-        return self.linedict[lineno]
-
-
-# -------------------------------------------
-#
-# -------------------------------------------
-class BBox(object):
-    def __init__(self, tup):
-        self.llx, self.lly, self.urx, self.ury = tup
-
-    def __str__(self):
-        return '{},{},{},{}'.format(self.llx, self.lly, self.urx, self.ury)
-
-
-class FrekiBlock(list):
-    # doc_id=601.tetml page=1 block_id=1-2 bbox=147.5,711.0,465.4,723.0 1 1
-    def __init__(self, lines=None, doc_id=None, page=None, block_id=None, bbox=None, start=0, stop=0):
-        if lines is None:
-            lines = []
-        self.doc_id = doc_id
-        self.page = page
-        self.block_id = block_id
-        self.bbox = bbox
-        self.start = start
-        self.stop = stop
-        super().__init__(lines)
-
-    def __copy__(self):
-        fb = FrekiBlock(doc_id=self.doc_id, page=self.page, block_id=self.block_id, bbox=self.bbox, start=self.start,
-                        stop=self.stop)
-        for line in self:
-            fb.append(copy(line))
-        return fb
-
-    def set_line_label(self, lineno: int, label: str):
-        for line in self:
-            if line.lineno == lineno:
-                line.label = label
-                break
-
-    def preamble(self):
-        return 'doc_id={} page={} block_id={} bbox={} {} {}'.format(self.doc_id,
-                                                                    self.page,
-                                                                    self.block_id,
-                                                                    self.bbox,
-                                                                    self.start,
-                                                                    self.stop)
-
-    def __str__(self):
-        ret_str = '{}\n'.format(self.preamble())
-
-        # -------------------------------------------
-        # Get max length of preambles
-        # -------------------------------------------
-        max_pre_len = max([len(l.preamble()) for l in self])
-
-        # -------------------------------------------
-        # Add the content of the lines in the block.
-        # -------------------------------------------
-        for line in self:
-            ret_str += '{}:{}\n'.format(line.preamble(max_pre_len), line)
-        return ret_str
 
 
 # =============================================================================
@@ -154,235 +69,47 @@ class FrekiBlock(list):
 #
 # =============================================================================
 
-class FrekiReader(DocReader):
-    def __init__(self, fh, skip_feats=False):
-        self.fh = fh
-        self.lineno = 0
-
-        self.block_id = None
-        self.bbox = None
-        self.startline = None
-        self.stopline = None
-
-        # -------------------------------------------
-        # Dictionaries created by scanning the file.
-        # -------------------------------------------
-        self.featdict = {}
-        self.linedict = {}
-        self.llxs = {}
-        self.widths = {}
-        self.block_ids = {}
-        self.block_dict = {}
-        self.cur_block = None
-
-        # -------------------------------------------
-        # Keep track of span IDs
-        # -------------------------------------------
-        self._seen_spans = set([])
-
-        # -------------------------------------------
-        # Font Counters
-        # -------------------------------------------
-        self.fonts = Counter()
-        self.fontsizes = defaultdict(Counter)
-
-        for line in self:
-            self.llxs[self.lineno] = self.bbox.llx
-            self.widths[self.lineno] = self.width
-            self.featdict[self.lineno] = get_textfeats(line) if not skip_feats else {}
-            self.block_ids[self.lineno] = self.block_id
-            self.linedict[self.lineno] = line
-
-            # -------------------------------------------
-            # Scan the line for its font info
-            # -------------------------------------------
-            for font, size in line.fonts:
-                self.fonts.update([font])
-                self.fontsizes[font].update([size])
-
-        if len(self.llxs) > 0:
-            try:
-                self.left_indent = statistics.mode(self.llxs)
-            except statistics.StatisticsError:
-                self.left_indent = min(self.llxs)
-            self.avg_width = statistics.mean(self.widths)
-            if len(self.llxs) > 1:
-                self.width_stdev = statistics.stdev(self.widths)
-
-        get_frekifeats(self)
-        self.seek(0)
-
-    def most_common_font(self):
-        return self.fonts.most_common(1)[0][0]
-
-    def most_common_size(self, font):
-        return self.fontsizes[font].most_common(1)[0][0]
-
-    @property
-    def width(self):
-        return self.bbox.urx - self.bbox.llx
-
-    def labels(self):
-        return [line.label for lineno, line in sorted(self.linedict.items(), key=lambda x: x[0])]
-
-    def line_numbers(self):
-        return sorted(self.linedict.keys())
-
-    def __len__(self):
-        return len(self.linedict.keys())
-
-    def __next__(self):
-        data = self.fh.__next__()
-
-        while data:
-            if data.startswith('doc_id'):
-                d = data.split()
-                self.startline = int(d[-2])
-                self.stopline = int(d[-1])
-
-                # Break the key=value pairs into a dictionary
-                block_data = {k: v for k, v in (t.split('=') for t in d[:-2])}
-                self.bbox = BBox(float(i) for i in block_data['bbox'].split(','))
-                self.block_id = block_data['block_id']
-
-                # Create a new FrekiBlock object...
-                fb = FrekiBlock(doc_id=block_data['doc_id'], page=int(block_data['page']),
-                                block_id=block_data['block_id'], bbox=self.bbox,
-                                start=int(d[-2]), stop=int(d[-1]))
-                self.block_dict[block_data['block_id']] = fb
-                self.cur_block = fb
-                data = self.fh.__next__()
-                continue
-
-            elif data.startswith('line='):
-                # Gather the preamble into a dictionary...
-                preamble, text = re.search('(line=.*?):(.*)$', data).groups()
-                pre_dict = {x[0]: x[1] for x in re.findall('(\S+)=(\S+)', preamble)}
-                lineno = int(pre_dict['line'])
-
-                # -------------------------------------------
-                # Format the tag and flags
-                # -------------------------------------------
-                fulltag = pre_dict.get('tag', 'O')
-                flags = fulltag.split('+')[1:]
-                tag = fulltag.split('+')[0]
-
-                # -------------------------------------------
-                # Deal with span IDs.
-                # -------------------------------------------
-                span_id = pre_dict.get('span_id')
-                prev_span_id = self.get_line(lineno - 1).span_id if lineno > 1 else None
-
-                # If the line is not 'O' and does not have a span...
-                if 'O' not in tag and span_id is None:
-
-                    # Assign it the previous line's span, if it had one...
-                    if prev_span_id is not None:
-                        span_id = prev_span_id
-
-                    # Otherwise, create a new span 's[n+1]', according
-                    # to the number of already existing spans.
-                    else:
-                        span_id = 's{}'.format(len(self._seen_spans) + 1)
-
-                self._seen_spans.add(span_id)
-
-                # -------------------------------------------
-                # Use the span IDs and tag to determine the b/i status of
-                # the given line. (It is "B" if it is the beginning
-                # of a span, "I" otherwise)
-                # -------------------------------------------
-                bi_status = None
-                if 'O' not in tag:
-                    if span_id != prev_span_id:
-                        bi_status = 'b'
-                    else:
-                        bi_status = 'i'
-
-                # If multi-labels (e.g. L-G-T are not being used,
-                # strip the tag to only the first one.)
-                if not USE_MULTI_LABELS(conf):
-                    tag = tag.split('-')[0]
-
-                # If we are not stripping the tags off, re-add them to
-                # the label
-                if not STRIP_FLAGS(conf):
-                    tag = '+'.join([tag] + flags)
-
-                fonts = []
-                if 'fonts' in pre_dict:
-                    for f in pre_dict['fonts'].split(','):
-                        fonts.append(f.split('-'))
-
-                l = Line(text, int(lineno), fonts, label=tag, flags=flags, bi_status=bi_status, span_id=span_id)
-
-                self.lineno = int(lineno)
-
-                # Update the block dicts
-                self.cur_block.append(l)
-                self.block_ids[int(lineno)] = self.cur_block.block_id
-                return l
-
-            else:
-                data = self.fh.__next__()
-                continue
-
-        raise StopIteration()
-
-    def block_for_line(self, lineno) -> FrekiBlock:
-        return self.block_dict[self.block_ids[lineno]]
-
-
-class Line(str):
+def safe_mode(iterable):
     """
-    This is a class to contain a line that is intended to be a classification target instance.
+    Like taking the mode of the most common item
+    in a sequence, but pick between one of the two
+    most frequent if there is no unique mode.
+
+    :param iterable:
+    :return:
     """
+    return sorted(Counter(iterable).items(),
+                  reverse=True,
+                  key=lambda x: x[1])[0][0]
 
-    def __new__(cls, seq='', lineno: int = 0, fonts: tuple = None, label: str = None, flags: tuple = None,
-                bi_status=None, span_id=None):
+class FrekiInfo(object):
+    """
+    Store a few document-wide pieces of info for
+    FrekiDocs, so that they don't need to be
+    recalculated each time.
+    """
+    def __init__(self, fonts=None, llxs=None):
+        """
+        :type font: FrekiFont
+        :type llx: float
+        """
+        self.def_font = safe_mode(fonts)
+        self.llx = safe_mode(llxs)
 
-        if fonts is None:
-            fonts = tuple()
-        if flags is None:
-            flags = tuple()
+class FrekiAnalysis(object):
+    """
+    Wrap the features, labels, and
+    full document in an object to output
+    from the feature extraction code.
+    """
+    def __init__(self,
+                 measurements: list,
+                 labels: list,
+                 doc: FrekiDoc):
+        self.doc = doc
+        self.measurements = measurements
+        self.labels = labels
 
-        l = str.__new__(cls, seq)
-        l.lineno = lineno
-        l.fonts = fonts
-        l.label = label
-        l.flags = flags
-        l.bi_status = bi_status
-        l.span_id = span_id
-        return l
-
-    def __copy__(self):
-        l = Line(seq=self, lineno=self.lineno, fonts=self.fonts, label=self.label, flags=self.flags,
-                 bi_status=self.bi_status, span_id=self.span_id)
-        return l
-
-    def search(self, pattern, flags=0):
-        return re.search(pattern, self, flags=flags)
-
-    def fulltag(self):
-        return '+'.join([self.label] + list(self.flags))
-
-    def preamble(self, length=0):
-        fonts = ','.join(['{}-{}'.format(x[0], x[1]) for x in self.fonts])
-        pre = 'line={} tag={}'.format(self.lineno, self.fulltag())
-
-        if self.span_id is not None:
-            pre += ' span_id={}'.format(self.span_id)
-
-        pre += ' fonts={}'.format(fonts)
-
-        return '{{:<{}}}'.format(length).format(pre)
-
-
-class TextReader(DocReader):
-    def __next__(self):
-        data = self.fh.__next__()
-        self.lineno += 1
-        return data
 
 
 def get_textfeats(line: FrekiLine) -> dict:
@@ -436,7 +163,7 @@ def get_textfeats(line: FrekiLine) -> dict:
     return feats
 
 
-def get_frekifeats(line: FrekiLine):
+def get_frekifeats(line: FrekiLine, fi: FrekiInfo):
     feats = {}
 
     # Use this function to check the
@@ -446,7 +173,7 @@ def get_frekifeats(line: FrekiLine):
     def checkfeat(name, func):
         nonlocal feats
         if name in ENABLED_FREKI_FEATS(conf):
-            feats[name] = func(line)
+            feats[name] = func(line, fi)
 
     # Apply each feature if it is enabled
     checkfeat(F_IS_INDENTED, isindented)
@@ -525,27 +252,6 @@ def get_weight_path(path):
     return os.path.join(DEBUG_DIR(args), _path_rename(path, '_weights.txt'))
 
 
-# -------------------------------------------
-# Create an Object to Analyze a FrekiDoc
-# -------------------------------------------
-class FrekiAnalyzer(object):
-    def __init__(self):
-        self.textfeats = {}
-        self.widths = {}
-
-    @classmethod
-    def read_doc(cls, fd):
-        fa = FrekiAnalyzer()
-        for line in fd.lines():
-            fa.textfeats[line.lineno] = get_textfeats(line)
-            print(line.tag)
-        sys.exit()
-
-    @classmethod
-    def readf(cls, path):
-        return cls.read_doc(FrekiDoc.read(path))
-
-
 class ClassifierWrapper(object):
     """
     This class serves as a wrapper for saving the classifier.
@@ -585,9 +291,8 @@ def extract_feats(filelist, cw, overwrite=False, skip_noisy=True):
 
     def callback(result):
         l.acquire()
-        path_feats, path_labels = result
-        measurements.extend(path_feats)
-        labels.extend(path_labels)
+        measurements.extend(result.measurements)
+        labels.extend(result.labels)
         l.release()
 
     for path in filelist:
@@ -644,6 +349,8 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
     was created automatically, and for which the labels were mapped,
     but seem unlikely to be correct. Such noisy labels are preceded by
     an asterisk.
+
+    :rtype: FrekiAnalysis
     """
     feat_path = get_feat_path(path)
 
@@ -655,6 +362,11 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
     # -------------------------------------------
     measurements = []
     labels = []
+
+    # Read in the freki document, whether or
+    # not the features need to be reprocessed.
+    fd = FrekiDoc.read(path)
+
 
     # -------------------------------------------
     # Skip generating the text feature for this path
@@ -676,15 +388,16 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
 
         os.makedirs(os.path.dirname(feat_path), exist_ok=True)
         with open(feat_path, 'w', encoding='utf-8') as train_f:
-            fd = FrekiDoc.read(path)
 
+            fi = FrekiInfo(fonts=fd.fonts(),
+                           llxs=fd.llxs())
 
             # 1) Start by getting the features for this
             #    particular line...
             feat_dict = {}
             for line in fd.lines():
                 feat_dict[line.lineno] = get_textfeats(line)
-                feat_dict[line.lineno].update(get_frekifeats(line))
+                feat_dict[line.lineno].update(get_frekifeats(line, fi))
 
             # 2) Now, add the prev/next line data as necessary
             for line in fd.lines():
@@ -694,6 +407,10 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
                     if skip_noisy: continue
                     else: label = label.replace('*', '')
 
+                # Strip flags and multiple tags if
+                # needed
+                label = fix_label_flags_multi(label)
+
                 if 'O' not in label:
                     if line.span_id == line.doc.get_line(line.lineno-1).span_id:
                         bi_status = 'I'
@@ -702,13 +419,14 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
 
                     label = '{}-{}'.format(bi_status, label)
 
+
                 all_feats = get_all_line_feats(feat_dict, line.lineno)
                 measurements.append(all_feats)
                 labels.append(label)
 
                 write_training_vector(all_feats, label, train_f)
 
-    return measurements, labels
+    return FrekiAnalysis(measurements, labels, fd)
 
 
 def write_training_vector(featdict, label, out: TextIOBase = sys.stdout):
@@ -731,46 +449,26 @@ def write_training_vector(featdict, label, out: TextIOBase = sys.stdout):
 # =============================================================================
 # FEATURES
 # =============================================================================
-def isindented(line: FrekiLine):
-    # The doc-wide indent...
-    doc_indent = line.block.doc.llx()
+def isindented(line: FrekiLine, fi: FrekiInfo):
+    # Is the line's indenting greater than that
+    # for the overall document.
+    return line.block.llx > fi.llx
 
-    # This block's indent
-    block_indent = line.block.llx
-
-    return block_indent > doc_indent
-
-def has_smaller_font(line: FrekiLine):
-    def_font_size = statistics.mode(line.doc.fonts).f_size
-
+def has_smaller_font(line: FrekiLine, fi: FrekiInfo):
     for font in line.fonts:
-        if font.f_size < def_font_size:
+        if font.f_size < fi.def_font.f_size:
             return True
     return False
 
-
-
-def has_larger_font(line: FrekiLine):
-    def_font_size = statistics.mode(line.doc.fonts).f_size
+def has_larger_font(line: FrekiLine, fi: FrekiInfo):
     for font in line.fonts:
-        if font.f_size > def_font_size:
+        if font.f_size > fi.def_font.f_size:
             return True
     return False
 
-def has_nondefault_font(line: FrekiLine):
+def has_nondefault_font(line: FrekiLine, fi: FrekiInfo):
     # Get the "default" font
-    def_font = set([statistics.mode(line.doc.fonts)])
-    return bool(set(line.fonts) - def_font)
-
-
-def thinner_than_usual(r: FrekiReader):
-    """
-    Return true if the width of the current line's block
-    is more than one std. dev. away from the mean.
-
-    :rtype: bool
-    """
-    return r.width and (r.width <= (r.avg_width - r.width_stdev))
+    return bool(set(line.fonts) - set([fi.def_font]))
 
 
 def has_grams(line: str):
@@ -817,35 +515,35 @@ def has_leading_whitespace(line: FrekiLine):
 # Various Unicode Ranges
 # -------------------------------------------
 
-def has_cyrillic(line: Line):
+def has_cyrillic(line: FrekiLine):
     return bool(line.search('[\u0400-\u04FF]', flags=re.UNICODE))
 
 
-def has_diacritic(line: Line):
+def has_diacritic(line: FrekiLine):
     return bool(line.search('[\u0300–\u036F]|[\u1AB0-\u1AFF]|[\u1DC0-\u1DFF]|[\u20D0-\u20FF]|[\uFE20-\uFE2F]',
                             flags=re.UNICODE))
 
 
-def has_greek(line: Line):
+def has_greek(line: FrekiLine):
     return bool(line.search('[\u0370-\u03FF]|[\u1F00-\u1FFF]', flags=re.UNICODE))
 
 
-def has_japanese(line: Line):
+def has_japanese(line: FrekiLine):
     has_kanji = bool(line.search('[\u4E00-\u9FBF]', flags=re.U))
     has_hiragana = bool(line.search('[\u3040-\u309F]', flags=re.U))
     has_katakana = bool(line.search('[\u30A0-\u30FF]', flags=re.U))
     return has_kanji or has_hiragana or has_katakana
 
 
-def has_accented_latin(line: Line):
+def has_accented_latin(line: FrekiLine):
     return bool(line.search('[\u00C0-\u00FF]', flags=re.U))
 
 
-def has_korean(line: Line):
+def has_korean(line: FrekiLine):
     return bool(line.search('[\uAC00-\uD7A3]', flags=re.U))
 
 
-def has_unicode(line: Line):
+def has_unicode(line: FrekiLine):
     cyr = has_cyrillic(line)
     dia = has_diacritic(line)
     grk = has_greek(line)
@@ -873,23 +571,23 @@ def clean_word(s):
 # constitutes being too dissimilar.
 # -------------------------------------------
 
-def med_en_oov_rate(line: Line):
+def med_en_oov_rate(line: FrekiLine):
     return HIGH_OOV_THRESH(conf) > oov_rate(en_wl, line) > MED_OOV_THRESH(conf)
 
 
-def high_en_oov_rate(line: Line):
+def high_en_oov_rate(line: FrekiLine):
     return oov_rate(en_wl, line) >= HIGH_OOV_THRESH(conf)
 
 
-def high_gls_oov_rate(line: Line):
+def high_gls_oov_rate(line: FrekiLine):
     return oov_rate(gls_wl, line) > HIGH_OOV_THRESH(conf)
 
 
-def high_met_oov_rate(line: Line):
+def high_met_oov_rate(line: FrekiLine):
     return oov_rate(gls_wl, line) > HIGH_OOV_THRESH(conf)
 
 
-def oov_rate(wl: WordlistFile, line: Line):
+def oov_rate(wl: WordlistFile, line: FrekiLine):
     if not wl:
         return 0.0
     else:
@@ -929,33 +627,32 @@ def init_langnames():
 lang_re = re.compile('({})'.format('|'.join(langs), flags=re.I))
 
 
-def has_langname(line: Line):
+def has_langname(line: FrekiLine):
     init_langnames()
     return bool(line.search(lang_re))
 
 
-def has_quotation(line: Line):
+def has_quotation(line: FrekiLine):
     """ Return true if the line in question surrounds more than one word in quotes """
     return bool(line.search('[\'\"‘`“]\S+\s+.+[\'\"’”]'))
 
 
-def is_first_page(line: FrekiLine):
+def is_first_page(line: FrekiLine, *args):
     return line.block.page == 1
 
-def prev_line_same_block(line: FrekiLine):
-    prev_line = line.block.doc.get_line(line.lineno-1)
-    if prev_line is None:
+def same_block(cur_line, other_line):
+    if other_line is None:
         return False
     else:
-        return prev_line.block.block_id == line.block.block_id
+        return cur_line.block.block_id == other_line.block.block_id
 
-def next_line_same_block(line: FrekiLine):
-    next_line = line.block.doc.get_line(line.lineno+1)
-    if next_line is None:
-        return False
-    else:
-        return next_line.block.block_id == line.block.block_id
+def prev_line_same_block(line: FrekiLine, *args):
+    prev_line = line.doc.get_line(line.lineno-1)
+    return same_block(line, prev_line)
 
+def next_line_same_block(line: FrekiLine, *args):
+    next_line = line.doc.get_line(line.lineno+1)
+    return same_block(line, next_line)
 
 # -------------------------------------------
 # TRAIN THE CLASSIFIER
@@ -1429,24 +1126,25 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         sys.exit()
 
     # Load the saved classifier...
+    STD_LOG.log(NORM_LEVEL, "Loading saved classifier...")
     cf = BZ2File(classifier_path, 'r')
     cw = pickle.load(cf)
     cf.close()
     assert isinstance(cw, ClassifierWrapper), type(cw)
+    STD_LOG.log(NORM_LEVEL, "Classifier Loaded.")
 
     for path, feat_path in zip(filelist, feat_paths):
 
         # -------------------------------------------
         # Open the output classification path
         # -------------------------------------------
-        fr = FrekiReader(open(path, 'r', encoding='utf-8'))
-        measurements, labels = extract_feats_for_path(path, overwrite=overwrite, skip_noisy=True)
+        fa = extract_feats_for_path(path, overwrite=overwrite, skip_noisy=True)
 
-        if not measurements:
+        if not fa.measurements:
             continue
 
         # Transform the feature vector for use with the classifier...
-        vec = cw.dv.transform(measurements)
+        vec = cw.dv.transform(fa.measurements)
 
         # And reduce the features according to the selected features...
         selected_vec = cw.feat_selector.transform(vec)
@@ -1456,13 +1154,13 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
 
         # Ensure that the number of lines in the feature file
         # matches the number of lines returned by the classifier
-        f_len = len(list(fr.featdict.keys()))
-        c_len = len(classifications)
+        num_lines = len(fa.measurements)
+        num_classifications = len(classifications)
 
-        if f_len != c_len:
+        if num_lines != num_classifications:
             ERR_LOG.critical(
                 "The number of lines ({}) does not match the number of classifications ({}). Skipping file {}".format(
-                    f_len, c_len, path))
+                    num_lines, num_classifications, path))
             continue
 
         # -------------------------------------------
@@ -1480,8 +1178,6 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
 
         # -------------------------------------------
 
-        working_block = None  # Keep track of which block the last block is so we can write out
-
         # This file will contain the raw labelings from the classifier.
         if debug_on:
             os.makedirs(os.path.dirname(get_raw_classification_path(path)), exist_ok=True)
@@ -1497,26 +1193,19 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         cur_span = []
         total_detected = 0
 
-        for lineno, probs in zip(sorted(fr.featdict.keys()), classifications):
+        old_lines = list(fa.doc.lines())
+
+        for line, probs in zip(old_lines, classifications):
 
             classification = list(zip(cw.labels, probs))
 
             # Write the line number and classification probabilities to the debug file.
             if debug_on:
-                raw_classification_f.write('{}:'.format(lineno))
+                raw_classification_f.write('{}:'.format(line.lineno))
                 for label, weight in classification:
                     raw_classification_f.write('\t{}  {:.3e}'.format(label, weight))
                 raw_classification_f.write('\n')
                 raw_classification_f.flush()
-
-            # Get the block that contains this line.
-            cur_block = fr.block_for_line(lineno)
-
-            # If this is our first block (the previous block
-            # was None), then don't try to write it out,
-            # but do set the last seen block to the current one.
-            if working_block is None:
-                working_block = deepcopy(cur_block)
 
             # -------------------------------------------
             # Get the best label
@@ -1532,19 +1221,13 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
 
             # Set the label for the line in the working block
             # before potentially writing it out.
-            working_block.set_line_label(lineno, best_label)
+            fl = FrekiLine(line,
+                           tag=best_label,
+                           line=line.lineno)
+            fl.fonts = line.fonts
 
-            # If we have moved to a new block, write
-            # out the previous one.
-            #
-            # (NB: I write out the blocks as a chunk, rather than
-            #      the lines one at a time because it helps keep
-            #      regular spacing between lines)
-            if cur_block.block_id != working_block.block_id:
-                if classified_dir:
-                    classified_f.write('{}\n'.format(working_block))
+            fa.doc.set_line(line.lineno, fl)
 
-                working_block = deepcopy(cur_block)
 
             if best_label == 'O' and detected_dir:
                 if cur_span:
@@ -1553,11 +1236,11 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
                     cur_span = []
                     total_detected += 1
             else:
-                cur_span.append('{:<8}{}'.format(best_label, fr.get_line(lineno)))
+                cur_span.append('{:<8}{}'.format(best_label, fl))
 
-        # Write out the final block in the file.
+        # Write out the classified file.
         if classified_dir:
-            classified_f.write('{}\n'.format(working_block))
+            classified_f.write(str(fa.doc))
             classified_f.close()
 
         if detected_dir:
@@ -1616,15 +1299,24 @@ def eval_files(filelist, out_path, csv, gold_dir=None, **kwargs):
 
     out_f.close()
 
+def fix_label_flags_multi(label):
+    if STRIP_FLAGS(conf):
+        label = label.split('+')[0]
+
+    if not USE_MULTI_LABELS(conf):
+        label = label.split('-')[0]
+
+    return label
+
 
 def eval_file(eval_path, gold_path, sc=None, outstream=sys.stdout):
     """
     Look for the filename that matches the specified file
     """
-    eval_fr = FrekiReader(open(eval_path, 'r'), skip_feats=True)
-    gold_fr = FrekiReader(open(gold_path, 'r'), skip_feats=True)
+    eval_fd = FrekiDoc.read(eval_path)
+    gold_fd = FrekiDoc.read(gold_path)
 
-    if len(eval_fr) != len(gold_fr):
+    if len(eval_fd) != len(gold_fd):
         ERR_LOG.error(
             'The evaluation file "{}" and the gold file "{}" appear to have a different number of lines. Evaluation aborted.'.format(
                 eval_path, gold_path))
@@ -1632,10 +1324,11 @@ def eval_file(eval_path, gold_path, sc=None, outstream=sys.stdout):
         if sc is None:
             sc = SpanCounter()
 
-        for lineno in eval_fr.line_numbers():
-            eval_label = eval_fr.get_line(lineno).label
-            gold_label = gold_fr.get_line(lineno).label
-            sc.add_line(lineno, gold_label, eval_label)
+        for line in eval_fd.lines():
+            eval_label = fix_label_flags_multi(eval_fd.get_line(line.lineno).tag)
+            gold_label = fix_label_flags_multi(gold_fd.get_line(line.lineno).tag)
+
+            sc.add_line(line.lineno, gold_label, eval_label)
 
         return sc
         outstream.write(sc.matrix() + '\n\n')

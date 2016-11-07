@@ -869,6 +869,28 @@ def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_pat
     with BZ2File(classifier_path, 'wb') as f:
         pickle.dump(cw, f)
 
+def assign_spans(fd):
+    """
+    Assign span IDs to a document without them,
+    assuming only that a span is a contiguous
+    block of non-'O' labels.
+
+    :param fd: Document to assign span_ids to
+    :type fd: FrekiDoc
+    """
+    num_spans = 0
+    last_tag = 'O'
+    for line in fd.lines():
+        if 'O' not in line.tag:
+
+            # Increment if the last tag
+            # was 'O'
+            if 'O' in last_tag:
+                num_spans += 1
+
+            line.span_id = 's{}'.format(num_spans)
+
+        last_tag = line.tag
 
 # -------------------------------------------
 # DO the classification
@@ -1240,6 +1262,7 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
 
         # Write out the classified file.
         if classified_dir:
+            assign_spans(fa.doc)
             classified_f.write(str(fa.doc))
             classified_f.close()
 

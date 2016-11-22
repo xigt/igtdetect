@@ -30,14 +30,22 @@ gold_dir = ./gold
 # distributions for the classifier's decisions
 debug_dir = ./output/debug
 
-# Default path for the output classifier.
-classifier_path = ./output/models/out.classifier
+# The path to the classifier model to use by default.
+classifier_path = ./data/igt-detector.model
+
+# Default file paths
+eval_files = %(classified_dir)s/*.txt
+train_files = ./train/*.txt
+test_files = ./test/*.txt
+
 
 [files]
 en_wordlist = ./data/wordlists/english_words.txt
 gls_wordlist = ./data/wordlists/gloss.txt
 met_wordlist = ./data/wordlists/meta.txt
 lng_names = ./data/langs.txt
+gram_list = ./data/wordlists/grams.txt
+gram_list_cased = ./data/wordlist/grams_case_sensitive.txt
 
 [runtime]
 

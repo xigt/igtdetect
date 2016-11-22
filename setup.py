@@ -8,9 +8,11 @@ setup(name='igt-detect',
       author_email='rgeorgi@uw.edu',
       url='https://github.com/xigt/igtdetect',
       requires = [
-          'freki' >= 1.0
+          'freki(>=1.0)',
+          'sklearn(>=0.18)'
       ],
+      scripts=['igtdetect'],
       dependency_links=[
           'https://github.com/xigt/freki'
       ]
-     )
+      )

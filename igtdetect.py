@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-import statistics, abc, logging
+# coding=utf-8
+import logging
 from argparse import ArgumentParser, ArgumentTypeError
 from bz2 import BZ2File
 from collections import OrderedDict
-from copy import copy, deepcopy
+from copy import copy
 from functools import partial
-from collections import defaultdict, Counter, namedtuple
+from collections import defaultdict, Counter
 import glob, sys
 from io import TextIOBase
 from logging import StreamHandler
@@ -43,8 +44,8 @@ STD_LOG = logging.getLogger(name='STD')
 stdhandler = StreamHandler(sys.stdout)
 errhandler = StreamHandler(sys.stderr)
 
-stdhandler.setLevel(NORM_LEVEL)
-errhandler.setLevel(NORM_LEVEL)
+stdhandler.setLevel(logging.INFO)
+errhandler.setLevel(logging.WARNING)
 
 STD_LOG.addHandler(stdhandler)
 ERR_LOG.addHandler(errhandler)
@@ -79,9 +80,10 @@ def safe_mode(iterable):
     :param iterable:
     :return:
     """
-    return sorted(Counter(iterable).items(),
-                  reverse=True,
-                  key=lambda x: x[1])[0][0]
+    items = sorted(Counter(iterable).items(),
+                   reverse=True,
+                   key=lambda x: x[1])
+    return items[0][0] if items else None
 
 class FrekiInfo(object):
     """
@@ -103,20 +105,25 @@ class FrekiAnalysis(object):
     full document in an object to output
     from the feature extraction code.
     """
-    def __init__(self,
-                 measurements: list,
-                 labels: list,
-                 doc: FrekiDoc):
+    def __init__(self, measurements, labels, doc):
+        """
+        :type measurements: list[dict]
+        :type labels: list[str]
+        :type doc: FrekiDoc
+        """
         self.doc = doc
         self.measurements = measurements
         self.labels = labels
 
 
 
-def get_textfeats(line: FrekiLine) -> dict:
+def get_textfeats(line):
     """
     Given a line as input, return the text-based features
     available for that line.
+
+    :type line: FrekiLine
+    :rtype: dict
     """
 
     # Quick local function to check if a
@@ -125,14 +132,12 @@ def get_textfeats(line: FrekiLine) -> dict:
     feats = {}
 
     def checkfeat(name, func):
-        nonlocal feats
         if name in ENABLED_TEXT_FEATS(conf):
             feats[name] = func(line)
 
     # Quick function to add featuers for words
     # in the line.
     def basic_words(line):
-        nonlocal feats
         for word in split_words(line):
             if word:
                 feats['word_{}'.format(word)] = True
@@ -164,7 +169,12 @@ def get_textfeats(line: FrekiLine) -> dict:
     return feats
 
 
-def get_frekifeats(line: FrekiLine, fi: FrekiInfo):
+def get_frekifeats(line, fi):
+    """
+    :type line: FrekiLine
+    :type fi: FrekiInfo
+    :rtype: dict
+    """
     feats = {}
 
     # Use this function to check the
@@ -172,7 +182,6 @@ def get_frekifeats(line: FrekiLine, fi: FrekiInfo):
     # list of enabled features, and trigger
     # the appropriate function if it's enabled.
     def checkfeat(name, func):
-        nonlocal feats
         if name in ENABLED_FREKI_FEATS(conf):
             feats[name] = func(line, fi)
 
@@ -188,11 +197,13 @@ def get_frekifeats(line: FrekiLine, fi: FrekiInfo):
     return feats
 
 
-def get_all_line_feats(featdict, lineno) -> dict:
+def get_all_line_feats(featdict, lineno):
     """
     Given a dictionary mapping lines to features, get
     a new feature dict that includes features for the
     current line, as well as n-1 and n-2 lines, and n+1.
+
+    :rtype: dict
     """
 
     # Always include the features for the current line.
@@ -338,7 +349,7 @@ def load_feats(path):
     return labels, measures
 
 
-def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
+def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
     """
     Perform feature extraction for a single file.
 
@@ -385,7 +396,7 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
 
         #     return
 
-        ERR_LOG.info('Opening file "{}" for feature extraction to file "{}"...'.format(path_rel, feat_rel))
+        STD_LOG.info('Opening file "{}" for feature extraction to file "{}"...'.format(path_rel, feat_rel))
 
         os.makedirs(os.path.dirname(feat_path), exist_ok=True)
         with open(feat_path, 'w', encoding='utf-8') as train_f:
@@ -413,7 +424,10 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
                 label = fix_label_flags_multi(label)
 
                 if 'O' not in label:
-                    if line.span_id == line.doc.get_line(line.lineno-1).span_id:
+                    prev_line = line.doc.get_line(line.lineno-1)
+                    if (line.span_id and prev_line and
+                            prev_line.span_id and
+                            line.span_id == prev_line.span_id):
                         bi_status = 'I'
                     else:
                         bi_status = 'B'
@@ -430,13 +444,9 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True):
     return FrekiAnalysis(measurements, labels, fd)
 
 
-def write_training_vector(featdict, label, out: TextIOBase = sys.stdout):
+def write_training_vector(featdict, label, out=sys.stdout):
     """
-
-    :param featdict:
-    :param label:
-    :param out:
-    :return:
+    :type out: TextIOBase
     """
     out.write('{:s}'.format(label))
     for feat in sorted(featdict.keys()):
@@ -450,33 +460,62 @@ def write_training_vector(featdict, label, out: TextIOBase = sys.stdout):
 # =============================================================================
 # FEATURES
 # =============================================================================
-def isindented(line: FrekiLine, fi: FrekiInfo):
+def isindented(line, fi):
+    """
+    :type line: FrekiLine
+    :type fi: FrekiInfo
+    :rtype: bool
+    """
     # Is the line's indenting greater than that
     # for the overall document.
     return line.block.llx > fi.llx
 
-def has_smaller_font(line: FrekiLine, fi: FrekiInfo):
+def has_smaller_font(line, fi):
+    """
+    :type line: FrekiLine
+    :type fi: FrekiInfo
+    :rtype: bool
+    """
     for font in line.fonts:
         if font.f_size < fi.def_font.f_size:
             return True
     return False
 
-def has_larger_font(line: FrekiLine, fi: FrekiInfo):
+def has_larger_font(line, fi):
+    """
+    :type line: FrekiLine
+    :type fi: FrekiInfo
+    :rtype: bool
+    """
     for font in line.fonts:
         if font.f_size > fi.def_font.f_size:
             return True
     return False
 
-def has_nondefault_font(line: FrekiLine, fi: FrekiInfo):
+def has_nondefault_font(line, fi):
+    """
+    :type line: FrekiLine
+    :type fi: FrekiInfo
+    :rtype: bool
+    """
     # Get the "default" font
     return bool(set(line.fonts) - set([fi.def_font]))
 
 
-def has_grams(line: str):
-    return bool(line.search('|'.join(GRAM_LIST), flags=re.I) or line.search('|'.join(CASED_GRAM_LIST)))
+def has_grams(line):
+    """
+    :type line: str
+    :rtype: bool
+    """
+    return (gram_list and bool(line.search('|'.join(gram_list), flags=re.I)) or
+            gram_list_cased and line.search('|'.join(gram_list_cased)))
 
 
-def has_parenthetical(line: str):
+def has_parenthetical(line):
+    """
+    :type line: str
+    :rtype: bool
+    """
     return bool(line.search('\(.*\)'))
 
 
@@ -484,31 +523,59 @@ def has_parenthetical(line: str):
 year_str = '(?:1[8-9][0-9][0-9]|20[0-1][0-9])'
 
 
-def has_citation(line: FrekiLine):
+def has_citation(line):
+    """
+    :type line: str
+    :rtype: bool
+    """
     return bool(line.search('\([^,]+, {}\)'.format(year_str)))
 
 
-def has_year(line: FrekiLine):
+def has_year(line):
+    """
+    :type line: FrekiLine
+    :rtype: bool
+    """
     return bool(line.search(year_str))
 
 
-def has_asterisk(line: FrekiLine):
+def has_asterisk(line):
+    """
+    :type line: FrekiLine
+    :rtype: bool
+    """
     return '*' in line
 
 
-def has_underscore(line: FrekiLine):
+def has_underscore(line):
+    """
+    :type line: FrekiLine
+    :rtype: bool
+    """
     return '_' in line
 
 
-def has_bracketing(line: FrekiLine):
+def has_bracketing(line):
+    """
+    :type line: FrekiLine
+    :rtype: bool
+    """
     return bool(line.search('\[.*\]'))
 
 
-def has_numbering(line: FrekiLine):
+def has_numbering(line):
+    """
+    :type line: FrekiLine
+    :rtype: bool
+    """
     return bool(line.search('^\s*\(?[0-9a-z]+[\)\.]'))
 
 
-def has_leading_whitespace(line: FrekiLine):
+def has_leading_whitespace(line):
+    """
+    :type line: FrekiLine
+    :rtype: bool
+    """
     return bool(line.search('^\s+'))
 
 
@@ -516,35 +583,55 @@ def has_leading_whitespace(line: FrekiLine):
 # Various Unicode Ranges
 # -------------------------------------------
 
-def has_cyrillic(line: FrekiLine):
+def has_cyrillic(line):
+    """
+    :type line: FrekiLine
+    :rtype: bool
+    """
     return bool(line.search('[\u0400-\u04FF]', flags=re.UNICODE))
 
 
-def has_diacritic(line: FrekiLine):
+def has_diacritic(line):
+    """
+    :type line: FrekiLine
+    :rtype: bool
+    """
     return bool(line.search('[\u0300–\u036F]|[\u1AB0-\u1AFF]|[\u1DC0-\u1DFF]|[\u20D0-\u20FF]|[\uFE20-\uFE2F]',
                             flags=re.UNICODE))
 
 
-def has_greek(line: FrekiLine):
+def has_greek(line):
+    """
+    :type line: FrekiLine
+    :rtype: bool
+    """
     return bool(line.search('[\u0370-\u03FF]|[\u1F00-\u1FFF]', flags=re.UNICODE))
 
 
-def has_japanese(line: FrekiLine):
+def has_japanese(line):
+    """
+    :type line: FrekiLine
+    """
     has_kanji = bool(line.search('[\u4E00-\u9FBF]', flags=re.U))
     has_hiragana = bool(line.search('[\u3040-\u309F]', flags=re.U))
     has_katakana = bool(line.search('[\u30A0-\u30FF]', flags=re.U))
     return has_kanji or has_hiragana or has_katakana
 
 
-def has_accented_latin(line: FrekiLine):
+def has_accented_latin(line):
+    """
+    :type line: FrekiLine
+    """
     return bool(line.search('[\u00C0-\u00FF]', flags=re.U))
 
 
-def has_korean(line: FrekiLine):
+def has_korean(line):
+    """:type line: FrekiLine"""
     return bool(line.search('[\uAC00-\uD7A3]', flags=re.U))
 
 
-def has_unicode(line: FrekiLine):
+def has_unicode(line):
+    """:type line: FrekiLine"""
     cyr = has_cyrillic(line)
     dia = has_diacritic(line)
     grk = has_greek(line)
@@ -572,23 +659,30 @@ def clean_word(s):
 # constitutes being too dissimilar.
 # -------------------------------------------
 
-def med_en_oov_rate(line: FrekiLine):
+def med_en_oov_rate(line):
+    """:type line: FrekiLine"""
     return HIGH_OOV_THRESH(conf) > oov_rate(en_wl, line) > MED_OOV_THRESH(conf)
 
 
-def high_en_oov_rate(line: FrekiLine):
+def high_en_oov_rate(line):
+    """:type line: FrekiLine"""
     return oov_rate(en_wl, line) >= HIGH_OOV_THRESH(conf)
 
 
-def high_gls_oov_rate(line: FrekiLine):
+def high_gls_oov_rate(line):
+    """:type line: FrekiLine"""
     return oov_rate(gls_wl, line) > HIGH_OOV_THRESH(conf)
 
 
-def high_met_oov_rate(line: FrekiLine):
+def high_met_oov_rate(line):
+    """:type line: FrekiLine"""
     return oov_rate(gls_wl, line) > HIGH_OOV_THRESH(conf)
 
 
-def oov_rate(wl: WordlistFile, line: FrekiLine):
+def oov_rate(wl, line):
+    """:type wl: WordlistFile
+    :type line: FrekiLine
+    """
     if not wl:
         return 0.0
     else:
@@ -610,9 +704,10 @@ def oov_rate(wl: WordlistFile, line: FrekiLine):
             return oov_rate
 
 
+# -------------------------------------------
+# Read the language names into the global "langs" variable.
+# -------------------------------------------
 langs = set([])
-
-
 def init_langnames():
     global langs
     if len(langs) == 0:
@@ -628,17 +723,24 @@ def init_langnames():
 lang_re = re.compile('({})'.format('|'.join(langs), flags=re.I))
 
 
-def has_langname(line: FrekiLine):
+def has_langname(line):
+    """
+    :type line: FrekiLine
+    """
     init_langnames()
     return bool(line.search(lang_re))
 
 
-def has_quotation(line: FrekiLine):
+def has_quotation(line):
+    """
+    :type line: FrekiLine
+    """
     """ Return true if the line in question surrounds more than one word in quotes """
     return bool(line.search('[\'\"‘`“]\S+\s+.+[\'\"’”]'))
 
 
-def is_first_page(line: FrekiLine, *args):
+def is_first_page(line, *args):
+    """:type line: FrekiLine"""
     return line.block.page == 1
 
 def same_block(cur_line, other_line):
@@ -647,11 +749,13 @@ def same_block(cur_line, other_line):
     else:
         return cur_line.block.block_id == other_line.block.block_id
 
-def prev_line_same_block(line: FrekiLine, *args):
+def prev_line_same_block(line, *args):
+    """:type line: FrekiLine"""
     prev_line = line.doc.get_line(line.lineno-1)
     return same_block(line, prev_line)
 
-def next_line_same_block(line: FrekiLine, *args):
+def next_line_same_block(line, *args):
+    """:type line: FrekiLine"""
     next_line = line.doc.get_line(line.lineno+1)
     return same_block(line, next_line)
 
@@ -774,14 +878,15 @@ def combine_feat_files(pathlist, out_path=None):
 # =============================================================================
 # Train the classifier given a list of files
 # =============================================================================
-def train_classifier(cw: ClassifierWrapper, measurements, labels, classifier_path=None, debug_on=False,
+def train_classifier(cw, measurements, labels, classifier_path=None, debug_on=False,
                      max_features=None, **kwargs):
     """
     Train the classifier based on the input files in filelist.
 
-    :param filelist: List of files to train the classifier based upon.
-    :param classifier_path:
-    :return:
+    :type cw: ClassifierWrapper
+    :type measurements: list[dict]
+    :type labels: list[str]
+    :type max_features: int
     """
 
     if max_features is not None:
@@ -953,19 +1058,25 @@ def classify_doc(path, classifier, classifier_info):
 # =============================================================================
 # Evaluation Calculations
 # =============================================================================
-def exact_span_matches(eval_spans: OrderedDict, gold_spans: OrderedDict):
+def exact_span_matches(eval_spans, gold_spans):
     """
     The exact span matches are the intersections between
+
+    :type eval_spans: OrderedDict
+    :type gold_spans: OrderedDict
     """
     return len(set(eval_spans.values()) & set(gold_spans.values()))
 
 def f_measure(p, r):
     return 2 * (p*r)/(p+r) if (p+r) > 0 else 0
 
-def partial_matches(eval_spans: OrderedDict, gold_spans: OrderedDict, mode):
+def partial_matches(eval_spans, gold_spans, mode):
     """
     The partial span precision is calculated by the number of system spans which overlap
     in some way with a system span.
+
+    :type eval_spans: OrderedDict
+    :type gold_spans: OrderedDict
     """
     matches = 0
 
@@ -1158,7 +1269,7 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         # -------------------------------------------
         # Open the output classification path
         # -------------------------------------------
-        fa = extract_feats_for_path(path, overwrite=overwrite, skip_noisy=True)
+        fa = extract_feats_for_path(path, overwrite=overwrite, skip_noisy=True, **kwargs)
 
         if not fa.measurements:
             continue
@@ -1262,8 +1373,6 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         if classified_dir:
             assign_spans(fa.doc)
             classified_f.write(str(fa.doc))
-            print(fa.doc.spans())
-            sys.exit()
             classified_f.close()
 
         if detected_dir:
@@ -1420,10 +1529,10 @@ def globfiles(pathname):
 
 
 # -------------------------------------------
-
-#
 def split_words(sent):
     return [re.sub('[#:]', '', w.lower()) for w in re.split('[\.\-\s]', sent)]
+
+
 
 
 # =============================================================================
@@ -1444,39 +1553,81 @@ if __name__ == '__main__':
     common_parser = ArgumentParser(add_help=False)
     common_parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbosity.')
     common_parser.add_argument('-c', '--config', help='Alternate config file.')
-    common_parser.add_argument('-f', '--force', dest='overwrite', action='store_true',
+    common_parser.add_argument('-f', '--overwrite-features', dest='overwrite', action='store_true',
                                help='Overwrite previously generated feature files.')
 
     # -------------------------------------------
     # Load the default config file.
     # -------------------------------------------
-    conf = None
+    conf = PathRelativeConfigParser()
     def_path = os.path.join(os.path.dirname(__file__), './defaults.ini')
     if os.path.exists(def_path):
-        conf = PathRelativeConfigParser()
         conf.read(def_path)
 
     for sec in conf.sections():
         common_parser.set_defaults(**conf[sec])
 
-    # Determine whether the classifier
-    classifier_required = os.path.exists(def_path)
+    # -------------------------------------------
+    # Append extra config file onto args.
+    # -------------------------------------------
+    known_args = common_parser.parse_known_args()[0]
+    alt_c = PathRelativeConfigParser()
+    if known_args.config and os.path.exists(known_args.config):
+        alt_c.read(known_args.config)
+        conf.update(alt_c)
+
+
+    # -------------------------------------------
+    # Function to return whether an option is required,
+    # or whether it's been specified somewhere in
+    # the config file already.
+    # -------------------------------------------
+    def requires_opt(sec, opt, exists=False):
+        ret_val = not (conf and
+                       conf.has_option(sec, opt) and
+                       (not exists or os.path.exists(conf.get(sec, opt))))
+        return ret_val
+
+
+    # -------------------------------------------
+    # Define a few methods to help dealing with
+    # whether or not to prompt the user for an
+    # argument, or whether it's already been specified
+    # in the config file.
+    # -------------------------------------------
+    def requires_path(opt, exists=False):
+        return requires_opt('paths', opt, exists=exists)
+
+    def requires_glob(opt):
+        return not bool([p for p in get_glob(opt) if os.path.exists(p)])
+
+    def get_path(opt, fallback=None):
+        return conf.get('paths', opt, fallback=fallback)
+
+    def get_glob(opt):
+        return glob.glob(get_path(opt, fallback=''))
+    # -------------------------------------------
+
+
+
 
     # -------------------------------------------
     # Set up a common parser to inherit for the functions
     # that require the classifier to be specified
     # -------------------------------------------
     tt_parser = ArgumentParser(add_help=False)
-    tt_parser.add_argument('--classifier-path', required=classifier_required,
-                           help='Path to the saved classifier model.')
-    tt_parser.add_argument('--in-files', help='Path to input files used for training or testing.', type=globfiles)
+    tt_parser.add_argument('--classifier-path', required=requires_path('classifier_path', exists=True),
+                           help='Path to the saved classifier model.', default=get_path('classifier_path'))
 
     # Parser for combining evaluation arguments.
     ev_parser = ArgumentParser(add_help=False)
     ev_parser.add_argument('-o', '--output', dest='out_path', help='Output path to write result. [Default: stdout]')
     ev_parser.add_argument('--csv', help='Format the output as CSV.')
-    ev_parser.add_argument('--eval-files', help='Files to evaluate against', required=True, type=globfiles)
-    ev_parser.add_argument('--gold-dir', default=conf.get('paths', 'gold_dir'))
+    ev_parser.add_argument('--eval-files', help='Files to evaluate against',
+                           required=requires_glob('eval_files'),
+                           default=get_glob('eval_files'),
+                           type=globfiles)
+    ev_parser.add_argument('--gold-dir', default=conf.get('paths', 'gold_dir', fallback=None), required=requires_opt('paths', 'gold_dir'))
 
     # -------------------------------------------
     # Set up the subcommands
@@ -1489,13 +1640,24 @@ if __name__ == '__main__':
     # TRAINING
     # -------------------------------------------
     train_p = subparsers.add_parser('train', parents=[common_parser, tt_parser])
-    train_p.add_argument('--use-bi-labels', type=int, default=1)
+    train_p.add_argument('--use-bi-labels', type=int, default=conf.get('labels', 'use_bi_labels', fallback=1))
     train_p.add_argument('--max-features', type=int, default=-1)
+    train_p.add_argument('--train-files', help='Path to the files for training the classifier.',
+                         required=requires_glob('train_files'),
+                         default=get_glob('train_files'),
+                         type=globfiles)
+    train_p.add_argument('--overwrite-model', help='Overwrite previously created models', action='store_true')
 
     # -------------------------------------------
     # TESTING
     # -------------------------------------------
     test_p = subparsers.add_parser('test', parents=[common_parser, tt_parser])
+    test_p.add_argument('--test-files', help='Path to the files to be classified.', type=globfiles,
+                        required=requires_glob('test_files'),
+                        default=get_glob('test_files'))
+    test_p.add_argument('--classified-dir', help='Directory to output the classified documents.',
+                        required=requires_path('classified_dir'),
+                        default=get_path('classified_dir'))
 
     # -------------------------------------------
     # EVAL
@@ -1548,11 +1710,50 @@ if __name__ == '__main__':
         gls_wl = GL_WL(conf)
         met_wl = MT_WL(conf)
 
-    filelist = flatten(getattr(args, 'in_files', []))
-    eval_list = flatten(getattr(args, 'eval_files', []))
+    # -------------------------------------------
+    # Load Gramlists
+    # -------------------------------------------
+    global gram_wl, gram_cased_wl, gram_list, gram_list_cased
+    gram_wl = conf.get('files', 'gram_list', fallback=None)
+    gram_cased_wl = conf.get('files', 'gram_list_cased', fallback=None)
+
+    if gram_wl is None:
+        ERR_LOG.warn("No gramlist file found.")
+    if gram_cased_wl is None:
+        ERR_LOG.warn("No cased gramlist file found.")
+
+    def read_wl(path):
+        grams = []
+        if os.path.exists(path):
+            with open(path, 'r', encoding='utf-8') as f:
+                for line in f:
+                    if line.strip():
+                        grams.append(line.strip())
+        return grams
+
+    gram_list = read_wl(gram_wl)
+    gram_list_cased = read_wl(gram_cased_wl)
+
+    if not gram_list:
+        ERR_LOG.warn("No grams found.")
+    if not gram_list_cased:
+        ERR_LOG.warn("No cased grams found.")
+    # -------------------------------------------
+
+
+
+    # -------------------------------------------
+    # Set up the different filelists.
+    # -------------------------------------------
+    train_filelist = flatten(getattr(args, 'train_files', []))
+    test_filelist = flatten(getattr(args, 'test_files', []))
+    eval_filelist = flatten(getattr(args, 'eval_files', []))
 
 
     def train(fl):
+        if os.path.exists(args.classifier_path) and not args.overwrite_model:
+            ERR_LOG.critical('Classifier model file "{}" exists, and overwrite not forced. Aborting training.'.format(args.classifier_path))
+            sys.exit(2)
         cw = ClassifierWrapper()
         measurements, labels = extract_feats(fl, cw, overwrite=args.overwrite, skip_noisy=True)
         train_classifier(cw, measurements, labels, **vars(args))
@@ -1582,12 +1783,12 @@ if __name__ == '__main__':
 
     # Switch between the commands
     if args.subcommand == 'train':
-        train(filelist)
+        train(train_filelist)
     elif args.subcommand == 'test':
-        test(filelist)
+        test(test_filelist)
     elif args.subcommand == 'eval':
-        eval(eval_list)
+        eval(eval_filelist)
     elif args.subcommand == 'testeval':
-        testeval(filelist)
+        testeval(train_filelist)
     elif args.subcommand == 'traintesteval':
-        traintesteval(filelist, eval_list)
+        traintesteval(train_filelist, eval_filelist)

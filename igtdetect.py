@@ -17,7 +17,6 @@ import pickle
 # -------------------------------------------
 # Import scikit-learn modules
 # -------------------------------------------
-import numpy as np
 from multiprocessing import Lock
 
 import time
@@ -1588,6 +1587,7 @@ if __name__ == '__main__':
     from sklearn.feature_extraction import DictVectorizer
     from sklearn.feature_selection import SelectKBest, chi2
     from sklearn.linear_model import LogisticRegression
+    import numpy as np
 
     # -------------------------------------------
     # Function to return whether an option is required,

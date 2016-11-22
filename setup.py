@@ -7,12 +7,9 @@ setup(name='igt-detect',
       author='Ryan Georgi',
       author_email='rgeorgi@uw.edu',
       url='https://github.com/xigt/igtdetect',
-      requires = [
-          'freki(>=1.0)',
-          'sklearn(>=0.18)'
+      install_requires = [
+          'freki',
+          'scikit-learn >= 0.18',
+          'numpy'
       ],
-      scripts=['igtdetect'],
-      dependency_links=[
-          'https://github.com/xigt/freki'
-      ]
       )

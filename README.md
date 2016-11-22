@@ -17,6 +17,7 @@ The input for training can be produced by:
 * Python Modules:
 	* [scikit-learn](http://scikit-learn.org/)
 	* [freki](https://github.com/xigt/freki)
+	* [numpy](http://www.numpy.org/)
 
 *N.B.: If for some reason you are unable to install modules into your python installation, you can use the `pythonpath` setting in the config files to add folders that contain the appropriate modules*
 

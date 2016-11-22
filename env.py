@@ -125,22 +125,6 @@ def GL_WL(config): return WLF(config, GLS_WORDLIST)
 def MT_WL(config): return WLF(config, MET_WORDLIST)
 
 
-# =============================================================================
-# List of grams, to be used
-# =============================================================================
-
-# These grams will be searched for case-insensitive.
-GRAM_LIST = ['1SG', '1PL', '1SM',
-             '2SG', '2P', '2SM',
-             '3SG', '3REFL', '3SGP', '3SM', '3P']
-
-# These grams will be searched for case sensitive.
-CASED_GRAM_LIST = ['POSS',
-                   'ACC','NOM', 'DAT', 'ERG', 'AOR', 'ABS', 'OBL', 'DUAL', 'REFL',
-                   'NEG', 'TOP',
-                   'FUT', 'PROG', 'PRES', 'PASS']
-
-
 def USE_BI_LABELS(config):
     return config.getboolean('labels', 'use_bi_labels')
 

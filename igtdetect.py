@@ -22,10 +22,6 @@ from multiprocessing import Lock
 
 import time
 
-from sklearn.feature_extraction import DictVectorizer
-from sklearn.feature_selection import SelectKBest, chi2
-from sklearn.linear_model import LogisticRegression
-
 from subprocess import Popen, PIPE
 
 from env import *
@@ -34,7 +30,7 @@ import re
 # -------------------------------------------
 # Set up logging
 # -------------------------------------------
-from freki.serialize import FrekiDoc, FrekiLine, FrekiBlock, FrekiFont
+
 
 NORM_LEVEL = 1000
 logging.addLevelName(NORM_LEVEL, 'NORMAL')
@@ -1576,6 +1572,22 @@ if __name__ == '__main__':
         alt_c.read(known_args.config)
         conf.update(alt_c)
 
+
+    # -------------------------------------------
+    # Try to add things from the pythonpath
+    # -------------------------------------------
+    pythonpath = conf.get('runtime', 'pythonpath', fallback=None)
+    if pythonpath:
+        for subpath in pythonpath.split(':'):
+            sys.path.append(subpath)
+
+    # -------------------------------------------
+    # Import non-default modules
+    # -------------------------------------------
+    from freki.serialize import FrekiDoc, FrekiLine, FrekiFont
+    from sklearn.feature_extraction import DictVectorizer
+    from sklearn.feature_selection import SelectKBest, chi2
+    from sklearn.linear_model import LogisticRegression
 
     # -------------------------------------------
     # Function to return whether an option is required,

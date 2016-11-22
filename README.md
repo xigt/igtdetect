@@ -18,6 +18,8 @@ The input for training can be produced by:
 	* [scikit-learn](http://scikit-learn.org/)
 	* [freki](https://github.com/xigt/freki)
 
+*N.B.: If for some reason you are unable to install modules into your python installation, you can use the `pythonpath` setting in the config files to add folders that contain the appropriate modules*
+
 ### Setup
 
 1. Copy the included `defaults.ini.sample` file as `defaults.ini`

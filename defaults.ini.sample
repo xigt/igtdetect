@@ -51,6 +51,7 @@ gram_list_cased = ./data/wordlist/grams_case_sensitive.txt
 
 java_mem = 16g
 debug_on = 1
+#pythonpath = ./path/to/additional/modules
 
 # =============================================================================
 # LABEL Setup

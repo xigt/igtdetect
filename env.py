@@ -29,28 +29,6 @@ class PathRelativeConfigParser(ConfigParser):
             setpaths(self, filenames)
 
 
-# Get the mallet directory...
-def MALLET_DIR(config):
-    return config.getpath('paths', 'mallet_dir')
-
-def MALLET_BIN(config):
-    return os.path.join(MALLET_DIR(config), 'bin/mallet')
-
-def INFO_BIN(config):
-    return os.path.join(MALLET_DIR(config), 'bin/classifier2info')
-
-def JAVA_CP(config):
-    return '{}:{}'.format(os.path.join(MALLET_DIR(config), 'class'),
-                          os.path.join(MALLET_DIR(config), 'lib/mallet-deps.jar'))
-
-def JAVA_ARGS(config):
-    return ['java', '-Xmx' + config.get('runtime', 'java_mem'), '-ea',
-            '-Djava.awt.headless=true',
-            '-Dfile.encoding=UTF-8',
-            '-server',
-            '-classpath', JAVA_CP(config)]
-
-
 # -------------------------------------------
 # The following options are concerned with various
 # folders for holding temporary and debug files
@@ -100,11 +78,19 @@ def MET_WORDLIST(config):
 def LNG_NAMES(config):
     return config.get('files', 'lng_names')
 
+_high_oov_thresh = None
 def HIGH_OOV_THRESH(config):
-    return config.getfloat('thresholds', 'high_oov')
+    global _high_oov_thresh
+    if _high_oov_thresh is None:
+        _high_oov_thresh = config.getfloat('thresholds', 'high_oov')
+    return _high_oov_thresh
 
+_med_oov_thresh = None
 def MED_OOV_THRESH(config):
-    return config.getfloat('thresholds', 'med_oov')
+    global _med_oov_thresh
+    if _med_oov_thresh is None:
+        _med_oov_thresh = config.getfloat('thresholds', 'med_oov')
+    return _med_oov_thresh
 
 # -------------------------------------------
 # Load the Wordlist if it is defined in the config.
@@ -244,11 +230,21 @@ def enabled_feats(config: ConfigParser, section, featlist):
             enabled.add(feat)
     return enabled
 
+_enabled_freki_feats = None
+_enabled_text_feats = None
+
 def ENABLED_FREKI_FEATS(config: ConfigParser):
-    return enabled_feats(config, 'freki_features', F_LIST)
+    global _enabled_freki_feats
+    if _enabled_freki_feats is None:
+        _enabled_freki_feats = enabled_feats(config, 'freki_features', F_LIST)
+    return _enabled_freki_feats
+
 
 def ENABLED_TEXT_FEATS(config: ConfigParser):
-    return enabled_feats(config, 'text_features', T_LIST)
+    global _enabled_text_feats
+    if _enabled_text_feats is None:
+        _enabled_text_feats = enabled_feats(config, 'text_features', T_LIST)
+    return _enabled_text_feats
 
 
 # =============================================================================

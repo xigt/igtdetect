@@ -303,8 +303,8 @@ def extract_feats(filelist, cw, overwrite=False, skip_noisy=True):
         l.release()
 
     for path in filelist:
-        # p.apply_async(extract_feats_for_path, args=[path, overwrite, skip_noisy], callback=callback)
-        callback(extract_feats_for_path(path, overwrite=overwrite, skip_noisy=skip_noisy))
+        p.apply_async(extract_feats_for_path, args=[path, overwrite, skip_noisy], callback=callback)
+        # callback(extract_feats_for_path(path, overwrite=overwrite, skip_noisy=skip_noisy))
 
     p.close()
     p.join()

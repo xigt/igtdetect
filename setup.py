@@ -9,9 +9,10 @@ setup(name='igt-detect',
       url='https://github.com/xigt/igtdetect',
       install_requires = [
           'scikit-learn >= 0.18',
-          'numpy'
+          'numpy',
+          'freki'
       ],
       dependency_links = [
-          'https://github.com/xigt/freki'
+          'https://github.com/xigt/freki/tarball/master#egg=freki-0.1.0'
       ]
       )

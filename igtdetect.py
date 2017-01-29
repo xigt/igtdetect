@@ -3,7 +3,7 @@
 import logging
 from argparse import ArgumentParser, ArgumentTypeError
 from bz2 import BZ2File
-from collections import OrderedDict
+from collections import OrderedDict, Iterable
 from copy import copy
 from functools import partial
 from collections import defaultdict, Counter
@@ -29,8 +29,6 @@ import re
 # -------------------------------------------
 # Set up logging
 # -------------------------------------------
-
-
 NORM_LEVEL = 1000
 logging.addLevelName(NORM_LEVEL, 'NORMAL')
 ERR_LOG = logging.getLogger(name='ERRORS')
@@ -50,9 +48,6 @@ ERR_LOG.addHandler(errhandler)
 # -------------------------------------------
 TYPE_FREKI = 'freki'
 TYPE_TEXT = 'text'
-
-
-
 
 # =============================================================================
 # FrekiReader
@@ -100,17 +95,13 @@ class FrekiAnalysis(object):
     full document in an object to output
     from the feature extraction code.
     """
-    def __init__(self, measurements, labels, doc):
+    def __init__(self, data, doc):
         """
-        :type measurements: list[dict]
-        :type labels: list[str]
+        :type data: list[StringInstance]
         :type doc: FrekiDoc
         """
         self.doc = doc
-        self.measurements = measurements
-        self.labels = labels
-
-
+        self.data = data
 
 def get_textfeats(line):
     """
@@ -126,43 +117,46 @@ def get_textfeats(line):
     # and add it to the feature dict if so.
     feats = {}
 
-    def checkfeat(name, func):
+    def checkfeat_line(name, func, target=line):
         if name in ENABLED_TEXT_FEATS(conf):
-            feats[name] = func(line)
+            feats[name] = func(target)
+
+    word_list = list(split_words(line))
 
     # Quick function to add featuers for words
     # in the line.
-    def basic_words(line):
-        for word in split_words(line):
+    def basic_words():
+        for word in word_list:
             if word:
                 feats['word_{}'.format(word)] = True
 
-    checkfeat(T_BASIC, basic_words)
-    checkfeat(T_HAS_LANGNAME, has_langname)
-    checkfeat(T_HAS_GRAMS, has_grams)
-    checkfeat(T_HAS_PARENTHETICAL, has_parenthetical)
-    checkfeat(T_HAS_CITATION, has_citation)
-    checkfeat(T_HAS_ASTERISK, has_asterisk)
-    checkfeat(T_HAS_UNDERSCORE, has_underscore)
-    checkfeat(T_HAS_BRACKETING, has_bracketing)
-    checkfeat(T_HAS_QUOTATION, has_quotation)
-    checkfeat(T_HAS_NUMBERING, has_numbering)
-    checkfeat(T_HAS_LEADING_WHITESPACE, has_leading_whitespace)
-    checkfeat(T_HIGH_OOV_RATE, high_en_oov_rate)
-    checkfeat(T_MED_OOV_RATE, med_en_oov_rate)
-    checkfeat(T_HAS_JPN, has_japanese)
-    checkfeat(T_HAS_GRK, has_greek)
-    checkfeat(T_HAS_KOR, has_korean)
-    checkfeat(T_HAS_ACC, has_accented_latin)
-    checkfeat(T_HAS_CYR, has_cyrillic)
-    checkfeat(T_HAS_DIA, has_diacritic)
-    checkfeat(T_HAS_UNI, has_unicode)
-    checkfeat(T_HAS_YEAR, has_year)
-    checkfeat(T_HIGH_GLS_OOV_RATE, high_gls_oov_rate)
-    checkfeat(T_HIGH_MET_OOV_RATE, high_met_oov_rate)
+    if T_BASIC in ENABLED_TEXT_FEATS(conf):
+        basic_words()
+
+    checkfeat_line(T_HAS_LANGNAME, has_langname)
+    checkfeat_line(T_HAS_GRAMS, has_grams)
+    checkfeat_line(T_HAS_PARENTHETICAL, has_parenthetical)
+    checkfeat_line(T_HAS_CITATION, has_citation)
+    checkfeat_line(T_HAS_ASTERISK, has_asterisk)
+    checkfeat_line(T_HAS_UNDERSCORE, has_underscore)
+    checkfeat_line(T_HAS_BRACKETING, has_bracketing)
+    checkfeat_line(T_HAS_QUOTATION, has_quotation)
+    checkfeat_line(T_HAS_NUMBERING, has_numbering)
+    checkfeat_line(T_HAS_LEADING_WHITESPACE, has_leading_whitespace)
+    checkfeat_line(T_HIGH_OOV_RATE, high_en_oov_rate, target=word_list)
+    checkfeat_line(T_MED_OOV_RATE, med_en_oov_rate, target=word_list)
+    checkfeat_line(T_HAS_JPN, has_japanese)
+    checkfeat_line(T_HAS_GRK, has_greek)
+    checkfeat_line(T_HAS_KOR, has_korean)
+    checkfeat_line(T_HAS_ACC, has_accented_latin)
+    checkfeat_line(T_HAS_CYR, has_cyrillic)
+    checkfeat_line(T_HAS_DIA, has_diacritic)
+    checkfeat_line(T_HAS_UNI, has_unicode)
+    checkfeat_line(T_HAS_YEAR, has_year)
+    checkfeat_line(T_HIGH_GLS_OOV_RATE, high_gls_oov_rate, target=word_list)
+    checkfeat_line(T_HIGH_MET_OOV_RATE, high_met_oov_rate, target=word_list)
 
     return feats
-
 
 def get_frekifeats(line, fi):
     """
@@ -192,7 +186,7 @@ def get_frekifeats(line, fi):
     return feats
 
 
-def get_all_line_feats(featdict, lineno):
+def get_all_line_feats(featdict, lineno, **kwargs):
     """
     Given a dictionary mapping lines to features, get
     a new feature dict that includes features for the
@@ -206,19 +200,20 @@ def get_all_line_feats(featdict, lineno):
     all_feats = copy(cur_feats)
 
     # Use the features for the line before the previous one (n-2)
-    if USE_PREV_PREV_LINE(conf):
+
+    if USE_PREV_PREV_LINE(kwargs):
         prev_prev_feats = featdict.get(lineno - 2, {})
         for prev_key in prev_prev_feats.keys():
             all_feats['prev_prev_' + prev_key] = prev_prev_feats[prev_key]
 
     # Use the features for the previous line (n-1)
-    if USE_PREV_LINE(conf):
+    if USE_PREV_LINE(kwargs):
         prev_feats = featdict.get(lineno - 1, {})
         for prev_key in prev_feats.keys():
             all_feats['prev_' + prev_key] = prev_feats[prev_key]
 
     # Use the features for the next line (n+1)
-    if USE_NEXT_LINE(conf):
+    if USE_NEXT_LINE(kwargs):
         next_feats = featdict.get(lineno + 1, {})
         for next_key in next_feats.keys():
             all_feats['next_' + next_key] = next_feats[next_key]
@@ -259,29 +254,15 @@ def get_weight_path(path):
     return os.path.join(DEBUG_DIR(args), _path_rename(path, '_weights.txt'))
 
 
-class ClassifierWrapper(object):
-    """
-    This class serves as a wrapper for saving the classifier.
-    This consists of the learner itself ("c"), the object
-    responsible for keeping track of the feature-to-index mappings,
-    and which features to use (via the "feat_selector")
-    """
-
-    def __init__(self):
-        self.c = LogisticRegression()
-        self.dv = DictVectorizer(dtype=bool)
-        self.feat_selector = SelectKBest(chi2, 'all')
-        self.labels = []
-
-
 # -------------------------------------------
 # Perform feature extraction.
 # -------------------------------------------
-def extract_feats(filelist, cw, overwrite=False, skip_noisy=True):
+def extract_feats(filelist, cw, overwrite=False, skip_noisy=True, **kwargs):
     """
     Perform feature extraction over a list of files.
 
     Call extract_feat_for_path() in parallel for a speed boost.
+    :rtype: list[DataInstance]
     """
 
     # -------------------------------------------
@@ -290,21 +271,20 @@ def extract_feats(filelist, cw, overwrite=False, skip_noisy=True):
     # represents a line, and each dictionary entry represents
     # a feature:value pair.
     # -------------------------------------------
-    measurements = []
-    labels = []
+    data = []
 
     p = Pool()
     l = Lock()
 
     def callback(result):
+        """:type result: FrekiAnalysis"""
         l.acquire()
-        measurements.extend(result.measurements)
-        labels.extend(result.labels)
+        data.extend(result.data)
         l.release()
 
     for path in filelist:
-        p.apply_async(extract_feats_for_path, args=[path, overwrite, skip_noisy], callback=callback)
-        # callback(extract_feats_for_path(path, overwrite=overwrite, skip_noisy=skip_noisy))
+        # p.apply_async(extract_feats_for_path, args=[path, overwrite, skip_noisy], callback=callback)
+        callback(extract_feats_for_path(path, overwrite=overwrite, skip_noisy=skip_noisy, **kwargs))
 
     p.close()
     p.join()
@@ -313,35 +293,34 @@ def extract_feats(filelist, cw, overwrite=False, skip_noisy=True):
     # Remove the "B/I" from labels if that is disabled.
     # -------------------------------------------
     if not USE_BI_LABELS(conf):
-        for i, label in enumerate(labels):
-            if label[0:2] in ['B-', 'I-']:
-                labels[i] = label[2:]
+        for datum in data:
+            assert isinstance(datum, DataInstance)
+            if datum.label[0:2] in ['B-', 'I-']:
+                datum.label = datum.label[2:]
 
     # -------------------------------------------
     # Turn the extracted feature dict into vectors for sklearn.
     # -------------------------------------------
-    return measurements, labels
+    return data
 
 
 def load_feats(path):
     """
     Load features from a saved svm-lite like file
-
-    :param path:
-    :return:
+    :rtype:
     """
-    labels, measures = [], []
+    instances = []
     with open(path, 'r') as feat_f:
         for line in feat_f:
-            line_measures = {}
+            line_feats = {}
             data = line.split()
             label = data[0]
             for feat, value in [pair.split(':') for pair in data[1:]]:
-                line_measures[feat] = bool(value)
+                line_feats[feat] = bool(value)
 
-            labels.append(label)
-            measures.append(line_measures)
-    return labels, measures
+            di = DataInstance(label, line_feats)
+            instances.append(di)
+    return instances
 
 
 def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
@@ -367,8 +346,6 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
     # -------------------------------------------
     # Create a list of measurements, and associated labels.
     # -------------------------------------------
-    measurements = []
-    labels = []
 
     # Read in the freki document, whether or
     # not the features need to be reprocessed.
@@ -381,15 +358,12 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
     # has not asked to overwrite them.
     # -------------------------------------------
     if os.path.exists(feat_path) and (not overwrite):
-        ERR_LOG.warn('File "{}" already generated, not regenerating (use -f to force)...'.format(feat_path))
+        ERR_LOG.warning('File "{}" already generated, not regenerating (use -f to force)...'.format(feat_path))
 
-        path_labels, path_measurements = load_feats(feat_path)
-        labels.extend(path_labels)
-        measurements.extend(path_measurements)
+        line_instances = load_feats(feat_path)
 
     else:
-
-        #     return
+        line_instances = []
 
         STD_LOG.info('Opening file "{}" for feature extraction to file "{}"...'.format(path_rel, feat_rel))
 
@@ -429,23 +403,23 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
 
                     label = '{}-{}'.format(bi_status, label)
 
+                all_feats = get_all_line_feats(feat_dict, line.lineno, **kwargs)
+                li = DataInstance(label, all_feats)
+                line_instances.append(li)
 
-                all_feats = get_all_line_feats(feat_dict, line.lineno)
-                measurements.append(all_feats)
-                labels.append(label)
+                write_training_vector(li, train_f)
 
-                write_training_vector(all_feats, label, train_f)
-
-    return FrekiAnalysis(measurements, labels, fd)
+    return FrekiAnalysis(line_instances, fd)
 
 
-def write_training_vector(featdict, label, out=sys.stdout):
+def write_training_vector(li, out=sys.stdout):
     """
+    :type li: StringInstance
     :type out: TextIOBase
     """
-    out.write('{:s}'.format(label))
-    for feat in sorted(featdict.keys()):
-        val = featdict[feat]
+    out.write('{:s}'.format(li.label))
+    for feat in sorted(li.feats.keys()):
+        val = li.feats[feat]
         val_str = 1 if val else 0
         if val_str:
             out.write('\t{}:{}'.format(feat, val_str))
@@ -502,8 +476,8 @@ def has_grams(line):
     :type line: str
     :rtype: bool
     """
-    return (gram_list and bool(line.search('|'.join(gram_list), flags=re.I)) or
-            gram_list_cased and line.search('|'.join(gram_list_cased)))
+    return bool(gram_list and bool(line.search('|'.join(gram_list), flags=re.I)) or
+                gram_list_cased and line.search('|'.join(gram_list_cased)))
 
 
 def has_parenthetical(line):
@@ -654,40 +628,33 @@ def clean_word(s):
 # constitutes being too dissimilar.
 # -------------------------------------------
 
-def med_en_oov_rate(line):
-    """:type line: FrekiLine"""
-    return HIGH_OOV_THRESH(conf) > oov_rate(en_wl, line) > MED_OOV_THRESH(conf)
+def med_en_oov_rate(words):
+    """:type words: FrekiLine"""
+    return HIGH_OOV_THRESH(conf) > oov_rate(en_wl, words) > MED_OOV_THRESH(conf)
 
 
-def high_en_oov_rate(line):
-    """:type line: FrekiLine"""
-    return oov_rate(en_wl, line) >= HIGH_OOV_THRESH(conf)
+def high_en_oov_rate(words):
+    """:type words: FrekiLine"""
+    return oov_rate(en_wl, words) >= HIGH_OOV_THRESH(conf)
 
 
-def high_gls_oov_rate(line):
-    """:type line: FrekiLine"""
-    return oov_rate(gls_wl, line) > HIGH_OOV_THRESH(conf)
+def high_gls_oov_rate(words):
+    """:type words: FrekiLine"""
+    return oov_rate(gls_wl, words) > HIGH_OOV_THRESH(conf)
 
 
-def high_met_oov_rate(line):
-    """:type line: FrekiLine"""
-    return oov_rate(gls_wl, line) > HIGH_OOV_THRESH(conf)
+def high_met_oov_rate(words):
+    """:type words: FrekiLine"""
+    return oov_rate(gls_wl, words) > HIGH_OOV_THRESH(conf)
 
 
-def oov_rate(wl, line):
+def oov_rate(wl, words):
     """:type wl: WordlistFile
-    :type line: FrekiLine
+    :type words: FrekiLine
     """
     if not wl:
         return 0.0
     else:
-
-        words = []
-        for word in split_words(line):
-            words.extend(clean_word(word.lower()))
-
-        if len(words) <= 2:
-            return 0.0
 
         oov_words = Counter([w in en_wl for w in words])
         c_total = sum([v for v in oov_words.values()])
@@ -817,32 +784,6 @@ class ClassifierInfo():
             out.write(format_str.format(*val))
 
 
-def get_classifier_info(classpath, limit=30):
-    """
-    List the top $limit most informative features for the
-     given classifier.
-
-    :param classpath: Path to the classifier
-    :param limit: Number of features to list
-    """
-    p = Popen([INFO_BIN(conf),
-               '--classifier', classpath], stdout=PIPE)
-
-    ci = ClassifierInfo()
-
-    label = None
-    for line in p.stdout:
-        line = line.decode('utf-8')
-        if line.startswith('FEATURES FOR CLASS'):
-            label = line.split()[-1]
-
-        else:
-            feat, weight = line.split()
-            ci.add_feat(label, feat, weight)
-
-    return ci
-
-
 def combine_feat_files(pathlist, out_path=None):
     """
 
@@ -873,102 +814,36 @@ def combine_feat_files(pathlist, out_path=None):
 # =============================================================================
 # Train the classifier given a list of files
 # =============================================================================
-def train_classifier(cw, measurements, labels, classifier_path=None, debug_on=False,
+def train_classifier(cw, data, classifier_path=None, debug_on=False,
                      max_features=None, **kwargs):
     """
     Train the classifier based on the input files in filelist.
 
     :type cw: ClassifierWrapper
-    :type measurements: list[dict]
-    :type labels: list[str]
+    :type data: list[DataInstance]
     :type max_features: int
     """
+
 
     if max_features is not None:
         max_features = int(max_features)
     else:
         max_features = -1
 
-    # Transform the measurements (list of dicts)
-    # to a feature vector.
-    ERR_LOG.info("Converting features from dictionary to matrix...")
-    vec = cw.dv.fit_transform(measurements)
 
-    # Perform feature selection to limit to the top
-    # 1,000 features.
 
-    feat_select = cw.feat_selector
-    if max_features > 0:
-        n_features = min(vec.shape[-1], max_features)
-        ERR_LOG.info('Selecting features to the top "{}" best'.format(n_features))
-        feat_select = SelectKBest(chi2, n_features)
+    start_time = time.time()
 
-    cw.feat_selector = feat_select
 
-    feat_select.fit(vec, labels)
+    cw.train(data, num_feats=max_features)
+    stop_time = time.time()
+    ERR_LOG.log(NORM_LEVEL,
+                'Training finished in "{}" seconds.'.format(
+                    stop_time - start_time))
 
-    # Print out the pruned features...
-    selected_feats = feat_select.get_support()  # Boolean array of the selected features.
-    feat_names = np.array(cw.dv.get_feature_names())
-    ERR_LOG.info('Reduced feature count from {} to {}'.format(vec.shape[-1], np.count_nonzero(selected_feats)))
-
-    # Reduce the [sample, feature] matrix down to the selected features...
-    X = feat_select.transform(vec)
-
-    # Start the training time...
-    start_training = time.time()
-
-    # -------------------------------------------
-    # Train the classifier...
-    # -------------------------------------------
-    ERR_LOG.log(NORM_LEVEL, "Training classifier...")
-    if debug_on:
-        cw.c.set_params(verbose=True)
-
-    cw.c.set_params(n_jobs=8)  # Use all cpu cores
-    cw.c.fit(X, labels)
-    ERR_LOG.log(NORM_LEVEL, 'Training finished in "{}" seconds.'.format(int(time.time() - start_training)))
-
-    # -------------------------------------------
-    # Print out the feature weights...
-    # -------------------------------------------
-    debug_dir = kwargs.get('debug_dir', './debug')
-    if debug_on:
-        classinfo_dir = os.path.join(debug_dir, 'classifier_info')
-        os.makedirs(classinfo_dir, exist_ok=True)
-        classinfo_path = os.path.join(classinfo_dir,
-                                      os.path.splitext(os.path.basename(classifier_path))[0] + '_weights.txt')
-        classinfo_f = open(classinfo_path, 'w', encoding='utf-8')
-
-        # Get the default weights for each class...
-        defaults = {c: cw.c.intercept_[i] for i, c in enumerate(cw.labels)}
-
-        # Next, get the weights for each feature.
-        weights = {(f, c): cw.c.coef_[i][j] for j, f in enumerate(feat_names[selected_feats]) for i, c in
-                   enumerate(cw.labels)}
-        sorted_weights = sorted(weights.items(), reverse=True, key=lambda x: x[1])
-
-        format_str = '{:<40}{:<10.6}{:>10}\n'
-        classinfo_f.write(format_str.format('feat_name', 'weight', 'cls_name'))
-
-        for clsname in sorted(cw.labels):
-            classinfo_f.write(format_str.format('DEFAULT', defaults[clsname], clsname))
-        classinfo_f.write('- ' * 30 + '\n')
-
-        for w_tup, weight in sorted_weights:
-            feat_name, clsname = w_tup
-            classinfo_f.write(format_str.format(feat_name, weight, clsname))
-
-        classinfo_f.close()
-
-    # -------------------------------------------
-    # Add the labels to the classifier wrapper
-    # -------------------------------------------
-    cw.labels = np.unique(labels)
-
+    # Save the classifier.
     ERR_LOG.log(NORM_LEVEL, 'Writing classifier out to "{}"'.format(classifier_path))
-    with BZ2File(classifier_path, 'wb') as f:
-        pickle.dump(cw, f)
+    cw.save(classifier_path)
 
 def assign_spans(fd):
     """
@@ -995,60 +870,6 @@ def assign_spans(fd):
 
         last_tag = line.tag
 
-# -------------------------------------------
-# DO the classification
-# -------------------------------------------
-def classify_doc(path, classifier, classifier_info):
-    # -------------------------------------------
-    # We don't care about the labels that are currently
-    # on the document. However, due to what I'd describe
-    # as a bug in mallet, labels on the testing instances
-    # that have not been seen before will cause mallet to
-    # crash. So, as a workaround, write out a temporary
-    # file and replace the labels in it with a random
-    # known label from the classifier.
-    # -------------------------------------------
-    label_to_use = classifier_info.labels.pop()
-
-    temp_in = NamedTemporaryFile('w', encoding='utf-8', delete=False)
-    with open(path, 'r') as f:
-        for line in f:
-            data = line.split()
-            data[0] = label_to_use
-            temp_in.write('{}\n'.format('\t'.join(data)))
-    temp_in.close()
-
-    # -------------------------------------------
-    # Next, run mallet on the temporary file,
-    # piping the output to a pipe.
-    # -------------------------------------------
-    classifications = []
-    p = Popen([MALLET_BIN(conf), 'classify-svmlight',
-               '--classifier', classifier,
-               '--input', temp_in.name,
-               '--output', '-'], stdout=PIPE)
-
-    # -------------------------------------------
-    # Read the output, which looks like:
-    #      array:171	O	0.9958349677234593	L	0.0012096458407225073 ... LABEL    WEIGHT
-    #
-    # So, find all of the Label___weight pairs, parse the weight, and
-    # reverse sort by weight.
-    # -------------------------------------------
-    for line in p.stdout:
-        scores = []
-        for label, score in re.findall('(\S+)\s+([0-9\-\.E]+)', line.decode('utf-8')):
-            scores.append((label, float(score)))
-
-        classification = tuple(sorted(scores, key=lambda x: x[1], reverse=True))
-        classifications.append(classification)
-
-    if p.returncode:
-        raise Exception("There was an error running the classifier.")
-
-    os.unlink(temp_in.name)  # Delete the temporary output file with the replaced labels
-
-    return classifications
 
 # =============================================================================
 # Evaluation Calculations
@@ -1253,10 +1074,7 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
 
     # Load the saved classifier...
     STD_LOG.log(NORM_LEVEL, "Loading saved classifier...")
-    cf = BZ2File(classifier_path, 'r')
-    cw = pickle.load(cf)
-    cf.close()
-    assert isinstance(cw, ClassifierWrapper), type(cw)
+    cw = ClassifierWrapper.load(classifier_path)
     STD_LOG.log(NORM_LEVEL, "Classifier Loaded.")
 
     for path, feat_path in zip(filelist, feat_paths):
@@ -1266,21 +1084,16 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         # -------------------------------------------
         fa = extract_feats_for_path(path, overwrite=overwrite, skip_noisy=True, **kwargs)
 
-        if not fa.measurements:
+        if not fa.data:
             continue
 
-        # Transform the feature vector for use with the classifier...
-        vec = cw.dv.transform(fa.measurements)
+        classifications = cw.test(fa.data)
 
-        # And reduce the features according to the selected features...
-        selected_vec = cw.feat_selector.transform(vec)
 
-        # Now retrieve the classification probability distribution
-        classifications = cw.c.predict_proba(selected_vec)
 
         # Ensure that the number of lines in the feature file
         # matches the number of lines returned by the classifier
-        num_lines = len(fa.measurements)
+        num_lines = len(fa.data)
         num_classifications = len(classifications)
 
         if num_lines != num_classifications:
@@ -1321,9 +1134,7 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
 
         old_lines = list(fa.doc.lines())
 
-        for line, probs in zip(old_lines, classifications):
-
-            classification = list(zip(cw.labels, probs))
+        for line, classification in zip(old_lines, classifications):
 
             # Write the line number and classification probabilities to the debug file.
             if debug_on:
@@ -1492,8 +1303,8 @@ def eval_file(eval_path, gold_path, ev=None, old_se=None, outstream=sys.stdout):
 
         return ev, old_se
 
-
 def flatten(seq):
+    """:rtype: Iterable"""
     flat = []
     if not (isinstance(seq, list) or isinstance(seq, tuple)):
         return [seq]
@@ -1502,12 +1313,11 @@ def flatten(seq):
             flat.extend(flatten(elt))
         return flat
 
-
 # -------------------------------------------
 # ARG TYPES
 # -------------------------------------------
-
 def globfiles(pathname):
+    """:rtype: Iterable[str]"""
     g = glob.glob(pathname)
     if not g:
         raise ArgumentTypeError(
@@ -1522,20 +1332,28 @@ def globfiles(pathname):
                 paths.append(path)
         return paths
 
-
-# -------------------------------------------
 def split_words(sent):
-    return [re.sub('[#:]', '', w.lower()) for w in re.split('[\.\-\s]', sent)]
+    for w_m in re.finditer('\w+', sent, flags=re.UNICODE):
+    # for w_m in re.finditer('[^\.\-\s]+', sent):
+        w = w_m.group(0).lower()
+        # The '#' and ':' characters are reserved in SVMlite format
+        yield w.replace(':','').replace('#','')
 
 
 
+def true_val(s):
+    """:type s: str
+    :rtype: bool"""
+    if str(s).lower() in ['1', 'on', 't', 'true', 'enabled']:
+        return True
+    elif str(s).lower() in ['0', 'off', 'f', 'false', 'disabled']:
+        return False
 
 # =============================================================================
 # MAIN
 # =============================================================================
 
 if __name__ == '__main__':
-
     # -------------------------------------------
     # Set up the main argument parser (for subcommands)
     # -------------------------------------------
@@ -1550,6 +1368,7 @@ if __name__ == '__main__':
     common_parser.add_argument('-c', '--config', help='Alternate config file.')
     common_parser.add_argument('-f', '--overwrite-features', dest='overwrite', action='store_true',
                                help='Overwrite previously generated feature files.')
+    common_parser.add_argument('--profile', help='Performance profile the app.', action='store_true')
 
     # -------------------------------------------
     # Load the default config file.
@@ -1558,6 +1377,7 @@ if __name__ == '__main__':
     def_path = os.path.join(os.path.dirname(__file__), './defaults.ini')
     if os.path.exists(def_path):
         conf.read(def_path)
+
 
     for sec in conf.sections():
         common_parser.set_defaults(**conf[sec])
@@ -1571,7 +1391,6 @@ if __name__ == '__main__':
         alt_c.read(known_args.config)
         conf.update(alt_c)
 
-
     # -------------------------------------------
     # Try to add things from the pythonpath
     # -------------------------------------------
@@ -1584,10 +1403,9 @@ if __name__ == '__main__':
     # Import non-default modules
     # -------------------------------------------
     from freki.serialize import FrekiDoc, FrekiLine, FrekiFont
-    from sklearn.feature_extraction import DictVectorizer
-    from sklearn.feature_selection import SelectKBest, chi2
-    from sklearn.linear_model import LogisticRegression
     import numpy as np
+    from rgclassifier.models import ClassifierWrapper, StringInstance, DataInstance
+
 
     # -------------------------------------------
     # Function to return whether an option is required,
@@ -1599,7 +1417,6 @@ if __name__ == '__main__':
                        conf.has_option(sec, opt) and
                        (not exists or os.path.exists(conf.get(sec, opt))))
         return ret_val
-
 
     # -------------------------------------------
     # Define a few methods to help dealing with
@@ -1618,17 +1435,13 @@ if __name__ == '__main__':
 
     def get_glob(opt):
         return glob.glob(get_path(opt, fallback=''))
-    # -------------------------------------------
-
-
-
 
     # -------------------------------------------
     # Set up a common parser to inherit for the functions
     # that require the classifier to be specified
     # -------------------------------------------
     tt_parser = ArgumentParser(add_help=False)
-    tt_parser.add_argument('--classifier-path', required=requires_path('classifier_path', exists=True),
+    tt_parser.add_argument('--classifier-path', required=requires_path('classifier_path', exists=False),
                            help='Path to the saved classifier model.', default=get_path('classifier_path'))
 
     # Parser for combining evaluation arguments.
@@ -1644,7 +1457,6 @@ if __name__ == '__main__':
     # -------------------------------------------
     # Set up the subcommands
     # -------------------------------------------
-
     subparsers = main_parser.add_subparsers(help='Valid subcommands', dest='subcommand')
     subparsers.required = True
 
@@ -1659,6 +1471,7 @@ if __name__ == '__main__':
                          default=get_glob('train_files'),
                          type=globfiles)
     train_p.add_argument('--overwrite-model', help='Overwrite previously created models', action='store_true')
+
 
     # -------------------------------------------
     # TESTING
@@ -1690,6 +1503,8 @@ if __name__ == '__main__':
     global args
     args = main_parser.parse_args()
 
+    argdict = vars(args)
+
     # -------------------------------------------
     # Read in the config file, if provided. Otherwise
     # the default config parser class will use the provided
@@ -1704,12 +1519,11 @@ if __name__ == '__main__':
             alt_c.read(args.config)
             for sec in alt_c.sections():
                 for key in alt_c[sec].keys():
-                    setattr(args, key, alt_c[sec][key])
+                    argdict[key] = alt_c[sec][key]
 
     # -------------------------------------------
     # Debug
     # -------------------------------------------
-
     if DEBUG_ON(args):
         os.makedirs(DEBUG_DIR(args), exist_ok=True)
 
@@ -1730,9 +1544,9 @@ if __name__ == '__main__':
     gram_cased_wl = conf.get('files', 'gram_list_cased', fallback=None)
 
     if gram_wl is None:
-        ERR_LOG.warn("No gramlist file found.")
+        ERR_LOG.warning("No gramlist file found.")
     if gram_cased_wl is None:
-        ERR_LOG.warn("No cased gramlist file found.")
+        ERR_LOG.warning("No cased gramlist file found.")
 
     def read_wl(path):
         grams = []
@@ -1747,46 +1561,39 @@ if __name__ == '__main__':
     gram_list_cased = read_wl(gram_cased_wl)
 
     if not gram_list:
-        ERR_LOG.warn("No grams found.")
+        ERR_LOG.warning("No grams found.")
     if not gram_list_cased:
-        ERR_LOG.warn("No cased grams found.")
-    # -------------------------------------------
-
-
+        ERR_LOG.warning("No cased grams found.")
 
     # -------------------------------------------
     # Set up the different filelists.
     # -------------------------------------------
-    train_filelist = flatten(getattr(args, 'train_files', []))
-    test_filelist = flatten(getattr(args, 'test_files', []))
-    eval_filelist = flatten(getattr(args, 'eval_files', []))
-
+    train_filelist = flatten(argdict.get('train_files', []))
+    test_filelist = flatten(argdict.get('test_files', []))
+    eval_filelist = flatten(argdict.get('eval_files', []))
+    # -------------------------------------------
 
     def train(fl):
         if os.path.exists(args.classifier_path) and not args.overwrite_model:
             ERR_LOG.critical('Classifier model file "{}" exists, and overwrite not forced. Aborting training.'.format(args.classifier_path))
             sys.exit(2)
         cw = ClassifierWrapper()
-        measurements, labels = extract_feats(fl, cw, overwrite=args.overwrite, skip_noisy=True)
-        train_classifier(cw, measurements, labels, **vars(args))
-
+        data = extract_feats(fl, cw, skip_noisy=True, **argdict)
+        train_classifier(cw, data, **argdict)
 
     def test(fl):
         ERR_LOG.log(NORM_LEVEL, "Beginning classification...")
         classify_docs(fl, **vars(args))
         ERR_LOG.log(NORM_LEVEL, "Classification complete.")
 
-
     def eval(fl):
         ERR_LOG.log(NORM_LEVEL, "Beginning evaluation...")
         eval_files(fl, **vars(args))
-
 
     def testeval(fl):
         test(fl)
         classified_paths = [get_classified_path(p, getattr(args, 'classified_dir')) for p in fl]
         eval(classified_paths)
-
 
     def traintesteval(fl, ep):
         train(fl)
@@ -1794,10 +1601,18 @@ if __name__ == '__main__':
 
 
     # Switch between the commands
+    import cProfile
     if args.subcommand == 'train':
-        train(train_filelist)
+        if args.profile:
+            cProfile.run('train(train_filelist)', 'train_stats')
+        else:
+            train(train_filelist)
+
     elif args.subcommand == 'test':
-        test(test_filelist)
+        if args.profile:
+            cProfile.run('test(test_filelist)', 'test_stats')
+        else:
+            test(test_filelist)
     elif args.subcommand == 'eval':
         eval(eval_filelist)
     elif args.subcommand == 'testeval':

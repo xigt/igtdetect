@@ -158,14 +158,23 @@ TEXT_FEATS_ENABLED  = True
 # the line before that (prev_prev), or the next
 # line.
 # -------------------------------------------
-def USE_PREV_LINE(config):
-    return config.getboolean('featuresets', 'use_prev_line')
+true_vals = set(['t','true','1','on','enabled'])
 
-def USE_PREV_PREV_LINE(config):
-    return config.getboolean('featuresets', 'use_prev_prev_line')
+def getbool(args, k):
+    val = args.get(k, False)
+    return str(val).lower() in true_vals
 
-def USE_NEXT_LINE(config):
-    return config.getboolean('featuresets', 'use_next_line')
+def USE_PREV_LINE(args):
+    return getbool(args, 'use_prev_line')
+    # return args.getboolean('featuresets', 'use_prev_line')
+
+def USE_PREV_PREV_LINE(args):
+    return getbool(args, 'use_prev_prev_line')
+    # return args.getboolean('featuresets', 'use_prev_prev_line')
+
+def USE_NEXT_LINE(args):
+    return getbool(args, 'use_next_line')
+    # return args.getboolean('featuresets', 'use_next_line')
 
 # -------------------------------------------
 # FEATURE CONSTANTS

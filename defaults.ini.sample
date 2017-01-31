@@ -129,3 +129,9 @@ has_year = 1
 [thresholds]
 high_oov = 0.5
 med_oov = 0.2
+
+[nfold]
+nfold_ratio = 0.9
+nfold_iters = 10
+nfold_seed = 232
+nfold_dir = ./output/nfold

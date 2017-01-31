@@ -110,24 +110,19 @@ def EN_WL(config): return WLF(config, EN_WORDLIST)
 def GL_WL(config): return WLF(config, GLS_WORDLIST)
 def MT_WL(config): return WLF(config, MET_WORDLIST)
 
-
-def USE_BI_LABELS(config):
-    return config.getboolean('labels', 'use_bi_labels')
-
+USE_BI_LABELS = 'use_bi_labels'
 
 # Some lines appear as combinations of labels, such as "L-G-T" for all
 # three on a single line. If this is set to true, these types of
 # combined labels are allowed. If set to false, only the first
 # of the multiple labels will be used.
-def USE_MULTI_LABELS(config):
-    return config.getboolean('labels', 'use_multi_labels')
+USE_MULTI_LABELS = 'use_multi_labels'
 
 # "Flags" are additional information that is intended to be included in
 # the information about the line, such as +AC (for Author Citation)
 # or +LN (for Language Name). These are stripped out by default, as
 # otherwise they would result in an explosion of labels.
-def STRIP_FLAGS(config):
-    return config.getboolean('labels', 'strip_flags')
+STRIP_FLAGS = 'strip_flags'
 
 # =============================================================================
 # Feature selection.

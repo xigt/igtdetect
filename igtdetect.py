@@ -314,7 +314,7 @@ def extract_feats(filelist, cw, overwrite=False, skip_noisy=True, **kwargs):
 
     # p.close()
     # p.join()
-    LOG.log(NORM_LEVEL, "Extraction complete.")
+    LOG.log(NORM_LEVEL, "Extraction complete. {} lines processed in {} documents.".format(len(data), len(filelist)))
 
     # -------------------------------------------
     # Regularize the labels in the file.
@@ -1158,6 +1158,7 @@ def selfeval_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
             le.add_eval_pair(gold_label, test_label)
 
     prf = le.prf(['O'])
+    LOG.log(NORM_LEVEL, "P/R/F: {.3f}/{.3f}/{.3f}".format(*prf))
     return prf
 
 
@@ -1470,7 +1471,8 @@ if __name__ == '__main__':
     # -------------------------------------------
     from freki.serialize import FrekiDoc, FrekiLine, FrekiFont
     import numpy as np
-    from riples_classifier.models import ClassifierWrapper, StringInstance, DataInstance, Distribution
+    from riples_classifier.models import ClassifierWrapper, StringInstance, DataInstance, Distribution, \
+        LogisticRegressionWrapper
 
 
     # -------------------------------------------
@@ -1673,7 +1675,7 @@ if __name__ == '__main__':
         if os.path.exists(args.get('classifier_path')) and not args.get('overwrite_model'):
             LOG.critical('Classifier model file "{}" exists, and overwrite not forced. Aborting training.'.format(args.get('classifier_path')))
             sys.exit(2)
-        cw = ClassifierWrapper()
+        cw = LogisticRegressionWrapper()
         data = extract_feats(fl, cw, skip_noisy=True, **args)
         train_classifier(cw, data, **args)
 
@@ -1716,7 +1718,7 @@ if __name__ == '__main__':
         r_list = []
         f_list = []
 
-        p = Pool()
+        # p = Pool(4)
 
         def nfold_callback(result):
             iter_p, iter_r, iter_f = result
@@ -1733,14 +1735,14 @@ if __name__ == '__main__':
             train_docs = fl[:iter_index]
             test_docs = fl[iter_index:]
 
-            # nfold_callback(nfold_traintest(train_docs, test_docs, **iter_args))
-            p.apply_async(nfold_traintest, args=(train_docs, test_docs), kwds=iter_args, callback=nfold_callback)
+            nfold_callback(nfold_traintest(train_docs, test_docs, **iter_args))
+            # p.apply_async(nfold_traintest, args=(train_docs, test_docs), kwds=iter_args, callback=nfold_callback)
 
             # Do stuff and reshuffle
             fl = test_docs + train_docs
 
-        p.close()
-        p.join()
+        # p.close()
+        # p.join()
 
         def mean_stddev(lst): return ('{:.3} (\u03c3={:.3})'.format(statistics.mean(lst), statistics.stdev(lst)))
 

@@ -1158,7 +1158,7 @@ def selfeval_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
             le.add_eval_pair(gold_label, test_label)
 
     prf = le.prf(['O'])
-    LOG.log(NORM_LEVEL, "P/R/F: {.3f}/{.3f}/{.3f}".format(*prf))
+    LOG.log(NORM_LEVEL, "P/R/F: {:.3f}/{:.3f}/{:.3f}".format(*prf))
     return prf
 
 
@@ -1432,6 +1432,7 @@ if __name__ == '__main__':
     common_parser.add_argument('-f', '--overwrite-features', dest='overwrite', action='store_true',
                                help='Overwrite previously generated feature files.')
     common_parser.add_argument('--profile', help='Performance profile the app.', action='store_true')
+    common_parser.add_argument('--feat-dir', help='Change the path to output/read features.')
 
     # -------------------------------------------
     # Load the default config file, if it exists.

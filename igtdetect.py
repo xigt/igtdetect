@@ -31,19 +31,15 @@ import re
 # -------------------------------------------
 # Set up logging
 # -------------------------------------------
-NORM_LEVEL = 1000
-logging.addLevelName(NORM_LEVEL, 'NORMAL')
-ERR_LOG = logging.getLogger(name='ERRORS')
-STD_LOG = logging.getLogger(name='STD')
+LOG = logging.getLogger()
+NORM_LEVEL = 40
+logging.addLevelName(NORM_LEVEL, 'NORM')
+stdout_handler = logging.StreamHandler(sys.stdout)
+stdout_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+stdout_handler.setLevel(NORM_LEVEL)
 
-stdhandler = StreamHandler(sys.stdout)
-errhandler = StreamHandler(sys.stderr)
+LOG.addHandler(stdout_handler)
 
-stdhandler.setLevel(logging.INFO)
-errhandler.setLevel(logging.WARNING)
-
-STD_LOG.addHandler(stdhandler)
-ERR_LOG.addHandler(errhandler)
 
 # -------------------------------------------
 # CONSTANTS
@@ -109,7 +105,7 @@ class FrekiAnalysis(object):
     def tags(self, **kwargs):
         return [handle_label(d.label, **kwargs) for d in self.data]
 
-def get_textfeats(line):
+def get_textfeats(line, **kwargs):
     """
     Given a line as input, return the text-based features
     available for that line.
@@ -123,9 +119,9 @@ def get_textfeats(line):
     # and add it to the feature dict if so.
     feats = {}
 
-    def checkfeat_line(name, func, target=line):
+    def checkfeat_line(name, func, *args, target=line):
         if name in ENABLED_TEXT_FEATS(conf):
-            feats[name] = func(target)
+            feats[name] = func(target, *args)
 
     word_list = list(split_words(line))
 
@@ -139,8 +135,8 @@ def get_textfeats(line):
     if T_BASIC in ENABLED_TEXT_FEATS(conf):
         basic_words()
 
-    checkfeat_line(T_HAS_LANGNAME, has_langname)
-    checkfeat_line(T_HAS_GRAMS, has_grams)
+    checkfeat_line(T_HAS_LANGNAME, has_langname, kwargs.get(LNG_NAMES), target=word_list)
+    checkfeat_line(T_HAS_GRAMS, has_grams, kwargs.get('gram_list'), kwargs.get('gram_list_cased'))
     checkfeat_line(T_HAS_PARENTHETICAL, has_parenthetical)
     checkfeat_line(T_HAS_CITATION, has_citation)
     checkfeat_line(T_HAS_ASTERISK, has_asterisk)
@@ -164,7 +160,7 @@ def get_textfeats(line):
 
     return feats
 
-def get_frekifeats(line, fi):
+def get_frekifeats(line, fi, **kwargs):
     """
     :type line: FrekiLine
     :type fi: FrekiInfo
@@ -302,21 +298,23 @@ def extract_feats(filelist, cw, overwrite=False, skip_noisy=True, **kwargs):
     # -------------------------------------------
     data = []
 
-    p = Pool()
+    # p = Pool()
     l = Lock()
 
-    def callback(result):
+    def feat_callback(result):
         """:type result: FrekiAnalysis"""
         l.acquire()
         data.extend(result.data)
         l.release()
 
+    LOG.log(NORM_LEVEL, "Extracting features for training.")
     for path in filelist:
         # p.apply_async(extract_feats_for_path, args=[path, overwrite, skip_noisy], callback=callback)
-        callback(extract_feats_for_path(path, overwrite=overwrite, skip_noisy=skip_noisy, **kwargs))
+        feat_callback(extract_feats_for_path(path, overwrite=overwrite, skip_noisy=skip_noisy, **kwargs))
 
-    p.close()
-    p.join()
+    # p.close()
+    # p.join()
+    LOG.log(NORM_LEVEL, "Extraction complete.")
 
     # -------------------------------------------
     # Regularize the labels in the file.
@@ -384,14 +382,14 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
     # has not asked to overwrite them.
     # -------------------------------------------
     if os.path.exists(feat_path) and (not overwrite):
-        ERR_LOG.warning('File "{}" already generated, not regenerating (use -f to force)...'.format(feat_path))
+        LOG.info('File "{}" already generated, not regenerating (use -f to force)...'.format(feat_path))
 
         line_instances = load_feats(feat_path)
 
     else:
         line_instances = []
 
-        STD_LOG.info('Opening file "{}" for feature extraction to file "{}"...'.format(path_rel, feat_rel))
+        LOG.info('Opening file "{}" for feature extraction to file "{}"...'.format(path_rel, feat_rel))
 
         os.makedirs(os.path.dirname(feat_path), exist_ok=True)
         with open(feat_path, 'w', encoding='utf-8') as train_f:
@@ -404,10 +402,10 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
             feat_dict = {}
             for line in fd.lines():
                 if getbool(kwargs, 'text_feats_enabled'):
-                    feat_dict[line.lineno] = get_textfeats(line)
+                    feat_dict[line.lineno] = get_textfeats(line, **kwargs)
 
                 if getbool(kwargs, 'freki_feats_enabled'):
-                    feat_dict[line.lineno].update(get_frekifeats(line, fi))
+                    feat_dict[line.lineno].update(get_frekifeats(line, fi, **kwargs))
 
             # 2) Now, add the prev/next line data as necessary
             for line in fd.lines():
@@ -501,7 +499,7 @@ def has_nondefault_font(line, fi):
     return bool(set(line.fonts) - set([fi.def_font]))
 
 
-def has_grams(line):
+def has_grams(line, gram_list, gram_list_cased):
     """
     :type line: str
     :rtype: bool
@@ -658,22 +656,22 @@ def clean_word(s):
 # constitutes being too dissimilar.
 # -------------------------------------------
 
-def med_en_oov_rate(words):
+def med_en_oov_rate(words, en_wl=None, **kwargs):
     """:type words: FrekiLine"""
     return HIGH_OOV_THRESH(conf) > oov_rate(en_wl, words) > MED_OOV_THRESH(conf)
 
 
-def high_en_oov_rate(words):
+def high_en_oov_rate(words, en_wl=None, **kwargs):
     """:type words: FrekiLine"""
     return oov_rate(en_wl, words) >= HIGH_OOV_THRESH(conf)
 
 
-def high_gls_oov_rate(words):
+def high_gls_oov_rate(words, gls_wl=None, **kwargs):
     """:type words: FrekiLine"""
     return oov_rate(gls_wl, words) > HIGH_OOV_THRESH(conf)
 
 
-def high_met_oov_rate(words):
+def high_met_oov_rate(words, gls_wl=None, **kwargs):
     """:type words: FrekiLine"""
     return oov_rate(gls_wl, words) > HIGH_OOV_THRESH(conf)
 
@@ -697,30 +695,38 @@ def oov_rate(wl, words):
 
 
 # -------------------------------------------
-# Read the language names into the global "langs" variable.
+# Read the language names
 # -------------------------------------------
-langs = set([])
-def init_langnames():
-    global langs
-    if len(langs) == 0:
-        with open(LNG_NAMES(conf), 'r', encoding='utf-8') as f:
+
+def parse_langnames(**kwargs):
+
+    langs = set([])
+    lang_path = kwargs.get(LNG_NAMES)
+    if lang_path and not os.path.exists(lang_path):
+        LOG.critical('Language name file "{}" could not be found.'.format(lang_path))
+        sys.exit(2)
+    else:
+        with open(lang_path, 'r', encoding='utf-8') as f:
             for line in f:
                 last_col = ' '.join(line.split()[3:])
                 for langname in last_col.split(','):
                     langname = langname.replace('[', '')
                     if len(langname) >= 5:
                         langs.add(langname.lower())
+    return langs
 
 
-lang_re = re.compile('({})'.format('|'.join(langs), flags=re.I))
 
 
-def has_langname(line):
+
+def has_langname(words, langs):
     """
     :type line: FrekiLine
     """
-    init_langnames()
-    return bool(line.search(lang_re))
+    for word in words:
+        if word in langs:
+            return True
+    return False
 
 
 def has_quotation(line):
@@ -864,15 +870,15 @@ def train_classifier(cw, data, classifier_path=None, debug_on=False,
 
     start_time = time.time()
 
-
+    LOG.log(NORM_LEVEL, "Beginning classifier training")
     cw.train(data, num_feats=max_features)
     stop_time = time.time()
-    ERR_LOG.log(NORM_LEVEL,
-                'Training finished in "{}" seconds.'.format(
-                    stop_time - start_time))
+    LOG.log(NORM_LEVEL,
+            'Training finished in "{:.2g}" seconds.'.format(
+                stop_time - start_time))
 
     # Save the classifier.
-    ERR_LOG.log(NORM_LEVEL, 'Writing classifier out to "{}"'.format(classifier_path))
+    LOG.log(NORM_LEVEL, 'Writing classifier out to "{}"'.format(classifier_path))
     cw.save(classifier_path)
 
 def assign_spans(fd):
@@ -1184,7 +1190,7 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         # This file will contain the raw labelings from the classifier.
         if debug_on:
             os.makedirs(os.path.dirname(get_raw_classification_path(result.path)), exist_ok=True)
-            ERR_LOG.log(NORM_LEVEL, 'Writing out raw classifications "{}"'.format(get_raw_classification_path(result.path)))
+            LOG.log(NORM_LEVEL, 'Writing out raw classifications "{}"'.format(get_raw_classification_path(result.path)))
             raw_classification_f = open(get_raw_classification_path(result.path), 'w')
 
         # -------------------------------------------
@@ -1257,10 +1263,10 @@ def eval_files(filelist, out_path=None, csv=False, gold_dir=None, **kwargs):
         out_f = open(out_path, 'w')
 
     if not os.path.exists(gold_dir):
-        ERR_LOG.critical('The gold file directory "{}" is missing or is unavailable.'.format(GOLD_DIR(conf)))
+        LOG.critical('The gold file directory "{}" is missing or is unavailable.'.format(GOLD_DIR(conf)))
         sys.exit(2)
     elif not os.path.isdir(gold_dir):
-        ERR_LOG.error('The gold file directory "{}" appears to be a file, not a directory.'.format(GOLD_DIR(conf)))
+        LOG.error('The gold file directory "{}" appears to be a file, not a directory.'.format(GOLD_DIR(conf)))
         sys.exit(2)
 
     # Create the counter to iterate over all the files.
@@ -1271,7 +1277,7 @@ def eval_files(filelist, out_path=None, csv=False, gold_dir=None, **kwargs):
     for eval_path in filelist:
         gold_path = get_gold_for_classified(eval_path)
         if not os.path.exists(gold_path):
-            ERR_LOG.warning('No corresponding gold file was found for the evaluation file "{}"'.format(eval_path))
+            LOG.warning('No corresponding gold file was found for the evaluation file "{}"'.format(eval_path))
         else:
             eval_file(eval_path, gold_path, ev=ev, old_se=old_se)
 
@@ -1316,7 +1322,7 @@ def eval_file(eval_path, gold_path, ev=None, old_se=None, outstream=sys.stdout):
     gold_fd = FrekiDoc.read(gold_path)
 
     if len(eval_fd) != len(gold_fd):
-        ERR_LOG.error(
+        LOG.error(
             'The evaluation file "{}" and the gold file "{}" appear to have a different number of lines. Evaluation aborted.'.format(
                 eval_path, gold_path))
     else:
@@ -1392,6 +1398,10 @@ def split_words(sent):
         yield w.replace(':','').replace('#','')
 
 
+def nfold_traintest(train_docs, test_docs, **kwargs):
+    train(kwargs, train_docs)
+    return selfeval_docs(test_docs, **kwargs)
+
 
 def true_val(s):
     """:type s: str
@@ -1416,21 +1426,25 @@ if __name__ == '__main__':
     # the subcommands
     # -------------------------------------------
     common_parser = ArgumentParser(add_help=False)
-    common_parser.add_argument('-v', '--verbose', action='store_true', help='Enable verbosity.')
+    common_parser.add_argument('-v', '--verbose', action='count', help='Enable verbosity.', default=0)
     common_parser.add_argument('-c', '--config', help='Alternate config file.')
     common_parser.add_argument('-f', '--overwrite-features', dest='overwrite', action='store_true',
                                help='Overwrite previously generated feature files.')
     common_parser.add_argument('--profile', help='Performance profile the app.', action='store_true')
 
     # -------------------------------------------
-    # Load the default config file.
+    # Load the default config file, if it exists.
     # -------------------------------------------
     conf = PathRelativeConfigParser()
     def_path = os.path.join(os.path.dirname(__file__), './defaults.ini')
     if os.path.exists(def_path):
         conf.read(def_path)
 
-
+    # -------------------------------------------
+    # Add all the key, value pairs in the default
+    # config file to the main parser (without
+    # sections)
+    # -------------------------------------------
     for sec in conf.sections():
         common_parser.set_defaults(**conf[sec])
 
@@ -1438,10 +1452,10 @@ if __name__ == '__main__':
     # Append extra config file onto args.
     # -------------------------------------------
     known_args = common_parser.parse_known_args()[0]
-    alt_c = PathRelativeConfigParser()
     if known_args.config and os.path.exists(known_args.config):
-        alt_c.read(known_args.config)
-        conf.update(alt_c)
+        alt_c = PathRelativeConfigParser.load(known_args.config)
+        for sec in alt_c.sections():
+            common_parser.set_defaults(**alt_c[sec])
 
     # -------------------------------------------
     # Try to add things from the pythonpath
@@ -1456,7 +1470,7 @@ if __name__ == '__main__':
     # -------------------------------------------
     from freki.serialize import FrekiDoc, FrekiLine, FrekiFont
     import numpy as np
-    from rgclassifier.models import ClassifierWrapper, StringInstance, DataInstance, Distribution
+    from riples_classifier.models import ClassifierWrapper, StringInstance, DataInstance, Distribution
 
 
     # -------------------------------------------
@@ -1508,6 +1522,16 @@ if __name__ == '__main__':
     ev_parser.add_argument('--gold-dir', default=conf.get('paths', 'gold_dir', fallback=None), required=requires_opt('paths', 'gold_dir'))
 
     # -------------------------------------------
+    # Parser for combining training/nfold
+    # -------------------------------------------
+    train_nf_parser = ArgumentParser(add_help=False)
+    train_nf_parser.add_argument('--use-bi-labels', type=int, default=conf.get('labels', 'use_bi_labels', fallback=1))
+    train_nf_parser.add_argument('--max-features', type=int, default=-1)
+    train_nf_parser.add_argument('--train-files', help='Path to the files for training the classifier.',
+                                 required=requires_glob('train_files'),
+                                 default=get_path('train_files'))
+
+    # -------------------------------------------
     # Set up the subcommands
     # -------------------------------------------
     subparsers = main_parser.add_subparsers(help='Valid subcommands', dest='subcommand')
@@ -1516,12 +1540,8 @@ if __name__ == '__main__':
     # -------------------------------------------
     # TRAINING
     # -------------------------------------------
-    train_p = subparsers.add_parser('train', parents=[common_parser, tt_parser])
-    train_p.add_argument('--use-bi-labels', type=int, default=conf.get('labels', 'use_bi_labels', fallback=1))
-    train_p.add_argument('--max-features', type=int, default=-1)
-    train_p.add_argument('--train-files', help='Path to the files for training the classifier.',
-                         required=requires_glob('train_files'),
-                         default=get_path('train_files'))
+    train_p = subparsers.add_parser('train', parents=[common_parser, tt_parser, train_nf_parser])
+
 
 
     # -------------------------------------------
@@ -1554,35 +1574,15 @@ if __name__ == '__main__':
     # -------------------------------------------
     # NFOLD
     # -------------------------------------------
-    nfold_p = subparsers.add_parser('nfold', parents=[common_parser, tt_parser])
+    nfold_p = subparsers.add_parser('nfold', parents=[common_parser, tt_parser, train_nf_parser])
     nfold_p.add_argument('--nfold-dir', help="Directory for nfold files")
 
-    global args
     args = main_parser.parse_args()
 
+    # -------------------------------------------
+    # Construct a common dictionary of options.
+    # -------------------------------------------
     argdict = vars(args)
-
-    # -------------------------------------------
-    # Read in the config file, if provided. Otherwise
-    # the default config parser class will use the provided
-    # defaults.
-    # -------------------------------------------
-    if args.config:
-        if not os.path.exists(args.config):
-            ERR_LOG.critical('The config file "{}" could not be found.'.format(args.config))
-            sys.exit(2)
-        else:
-            alt_c = PathRelativeConfigParser()
-            alt_c.read(args.config)
-            for sec in alt_c.sections():
-                for key in alt_c[sec].keys():
-                    argdict[key] = alt_c[sec][key]
-
-    # -------------------------------------------
-    # Sanity check some args
-    # -------------------------------------------
-
-
 
     # -------------------------------------------
     # Debug
@@ -1593,39 +1593,59 @@ if __name__ == '__main__':
     # -------------------------------------------
     # Load wordlist files for performance if testing or training
     # -------------------------------------------
-    global en_wl, gls_wl, met_wl
-    en_wl = EN_WL(conf)
-    gls_wl = GL_WL(conf)
-    met_wl = MT_WL(conf)
+    def load_wordlist(args, key):
+        val = args.get(key)
+        if val:
+            if os.path.exists(val):
+                return WordlistFile(val)
+            else:
+                LOG.critical('Wordlist file "{}" was specified at path "{}" but was not found.'.format(key, val))
+                sys.exit(2)
+        else:
+            return None
+
+
+    en_wl = load_wordlist(argdict, EN_WORDLIST)
+    gls_wl = load_wordlist(argdict, GLS_WORDLIST)
+    met_wl = load_wordlist(argdict, MET_WORDLIST)
 
     # -------------------------------------------
     # Load Gramlists
     # -------------------------------------------
-    global gram_wl, gram_cased_wl, gram_list, gram_list_cased
-    gram_wl = conf.get('files', 'gram_list', fallback=None)
-    gram_cased_wl = conf.get('files', 'gram_list_cased', fallback=None)
+
+    gram_wl = argdict.get('gram_list')
+    gram_cased_wl = argdict.get('gram_list_cased')
 
     if gram_wl is None:
-        ERR_LOG.warning("No gramlist file found.")
+        LOG.warning("No gramlist file found.")
     if gram_cased_wl is None:
-        ERR_LOG.warning("No cased gramlist file found.")
+        LOG.warning("No cased gramlist file found.")
 
     def read_wl(path):
-        grams = []
+        grams = set([])
         if os.path.exists(path):
             with open(path, 'r', encoding='utf-8') as f:
                 for line in f:
                     if line.strip():
-                        grams.append(line.strip())
+                        grams.add(line.strip())
         return grams
 
     gram_list = read_wl(gram_wl)
     gram_list_cased = read_wl(gram_cased_wl)
 
+    argdict['gram_list'] = gram_list
+    argdict['gram_list_cased'] = gram_list_cased
+
     if not gram_list:
-        ERR_LOG.warning("No grams found.")
+        LOG.warning("No grams found.")
     if not gram_list_cased:
-        ERR_LOG.warning("No cased grams found.")
+        LOG.warning("No cased grams found.")
+
+
+    # -------------------------------------------
+    # Load langnames
+    # -------------------------------------------
+    argdict[LNG_NAMES] = parse_langnames(**argdict)
 
     # -------------------------------------------
     # Set up the different filelists.
@@ -1639,21 +1659,31 @@ if __name__ == '__main__':
     eval_filelist = globlist('eval_files')
     # -------------------------------------------
 
+    # -------------------------------------------
+    # Handle verbosity
+    # -------------------------------------------
+    verbosity = argdict.get('verbose', 0)
+    if verbosity == 1:
+        LOG.setLevel(logging.INFO)
+    elif verbosity >= 2:
+        LOG.setLevel(logging.DEBUG)
+
+
     def train(args, fl):
         if os.path.exists(args.get('classifier_path')) and not args.get('overwrite_model'):
-            ERR_LOG.critical('Classifier model file "{}" exists, and overwrite not forced. Aborting training.'.format(args.get('classifier_path')))
+            LOG.critical('Classifier model file "{}" exists, and overwrite not forced. Aborting training.'.format(args.get('classifier_path')))
             sys.exit(2)
         cw = ClassifierWrapper()
         data = extract_feats(fl, cw, skip_noisy=True, **args)
         train_classifier(cw, data, **args)
 
     def test(args, fl):
-        ERR_LOG.log(NORM_LEVEL, "Beginning classification...")
+        LOG.log(NORM_LEVEL, "Beginning classification...")
         classify_docs(fl, **args)
-        ERR_LOG.log(NORM_LEVEL, "Classification complete.")
+        LOG.log(NORM_LEVEL, "Classification complete.")
 
     def eval(args, fl):
-        ERR_LOG.log(NORM_LEVEL, "Beginning evaluation...")
+        LOG.log(NORM_LEVEL, "Beginning evaluation...")
         eval_files(fl, **args)
 
     def testeval(args, fl):
@@ -1686,6 +1716,14 @@ if __name__ == '__main__':
         r_list = []
         f_list = []
 
+        p = Pool()
+
+        def nfold_callback(result):
+            iter_p, iter_r, iter_f = result
+            p_list.append(iter_p)
+            r_list.append(iter_r)
+            f_list.append(iter_f)
+
         for iter in range(iters):
             iter_args = {}
             iter_args.update(**args)
@@ -1695,16 +1733,16 @@ if __name__ == '__main__':
             train_docs = fl[:iter_index]
             test_docs = fl[iter_index:]
 
-            train(iter_args, train_docs)
-            iter_p, iter_r, iter_f = selfeval_docs(test_docs, **iter_args)
-            p_list.append(iter_p)
-            r_list.append(iter_r)
-            f_list.append(iter_f)
+            # nfold_callback(nfold_traintest(train_docs, test_docs, **iter_args))
+            p.apply_async(nfold_traintest, args=(train_docs, test_docs), kwds=iter_args, callback=nfold_callback)
 
             # Do stuff and reshuffle
             fl = test_docs + train_docs
 
-        def mean_stddev(lst): return ('{:.3} ({:.3})'.format(statistics.mean(lst), statistics.stdev(lst)))
+        p.close()
+        p.join()
+
+        def mean_stddev(lst): return ('{:.3} (\u03c3={:.3})'.format(statistics.mean(lst), statistics.stdev(lst)))
 
         print('P',mean_stddev(p_list))
         print('R',mean_stddev(r_list))

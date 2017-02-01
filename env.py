@@ -28,6 +28,13 @@ class PathRelativeConfigParser(ConfigParser):
         if isinstance(filenames, str):
             setpaths(self, filenames)
 
+    @classmethod
+    def load(cls, filename):
+        prcp = cls()
+        prcp.read(filename)
+        return prcp
+
+
 
 # -------------------------------------------
 # The following options are concerned with various
@@ -62,21 +69,17 @@ def DEBUG_DIR(obj):
 # Path to various text files
 # -------------------------------------------
 # Large English language wordlist.
-def EN_WORDLIST(config):
-    return config.get('files', 'en_wordlist')
+EN_WORDLIST = 'en_wordlist'
 
 # List of gloss-line words extracted from ODIN-2.
 # 1
-def GLS_WORDLIST(config):
-    return config.get('files', 'gls_wordlist')
+GLS_WORDLIST = 'gls_wordlist'
 
 # List of meta line words extracted from ODIN-2.1
-def MET_WORDLIST(config):
-    return config.get('files', 'met_wordlist')
+MET_WORDLIST = 'met_wordlist'
 
 # List of language names
-def LNG_NAMES(config):
-    return config.get('files', 'lng_names')
+LNG_NAMES = 'lng_names'
 
 _high_oov_thresh = None
 def HIGH_OOV_THRESH(config):
@@ -102,13 +105,6 @@ class WordlistFile(set):
             for line in f:
                 if line.strip():
                     self.add(line.split()[0])
-
-def WLF(config, f):
-    return WordlistFile(f(config)) if os.path.exists(f(config)) else None
-
-def EN_WL(config): return WLF(config, EN_WORDLIST)
-def GL_WL(config): return WLF(config, GLS_WORDLIST)
-def MT_WL(config): return WLF(config, MET_WORDLIST)
 
 USE_BI_LABELS = 'use_bi_labels'
 

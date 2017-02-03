@@ -3,12 +3,12 @@
 import logging
 import statistics
 from argparse import ArgumentParser, ArgumentTypeError
-from bz2 import BZ2File
 from collections import OrderedDict, Iterable
 from copy import copy
 from functools import partial
 from collections import defaultdict, Counter
 import glob, sys
+from gzip import GzipFile
 from io import TextIOBase
 from logging import StreamHandler
 from multiprocessing.pool import Pool
@@ -24,6 +24,8 @@ from multiprocessing import Lock
 import time
 
 from subprocess import Popen, PIPE
+
+import sqlite3
 
 from env import *
 import re
@@ -227,8 +229,11 @@ def _path_rename(path, ext):
     return os.path.splitext(os.path.basename(path))[0] + ext
 
 
-def get_feat_path(path):
-    return os.path.join(FEAT_DIR(args), _path_rename(path, '_feats.txt'))
+def get_feat_path(path, gzip=True):
+    feat_path = os.path.join(FEAT_DIR(args), _path_rename(path, '_feats.txt'))
+    if gzip:
+        feat_path += '.gz'
+    return feat_path
 
 
 def get_raw_classification_path(path):
@@ -282,7 +287,7 @@ def handle_label(label, **kwargs):
 # -------------------------------------------
 # Perform feature extraction.
 # -------------------------------------------
-def extract_feats(filelist, cw, overwrite=False, skip_noisy=True, **kwargs):
+def extract_feats(filelist, overwrite=False, skip_noisy=True, **kwargs):
     """
     Perform feature extraction over a list of files.
 
@@ -334,16 +339,25 @@ def load_feats(path):
     :rtype:
     """
     instances = []
-    with open(path, 'r') as feat_f:
-        for line in feat_f:
-            line_feats = {}
-            data = line.split()
-            label = data[0]
-            for feat, value in [pair.split(':') for pair in data[1:]]:
-                line_feats[feat] = bool(value)
 
-            di = DataInstance(label, line_feats)
-            instances.append(di)
+    # Load gzipped feat paths too.
+    if path.endswith('.gz'):
+        feat_f = GzipFile(path, 'r')
+    else:
+        feat_f = open(path, 'rb')
+
+    for line in feat_f:
+        line_str = line.decode(encoding='utf-8')
+        line_feats = {}
+        data = line_str.split()
+        label = data[0]
+        for feat, value in [pair.split(':') for pair in data[1:]]:
+            line_feats[feat] = bool(value)
+
+        di = DataInstance(label, line_feats)
+        instances.append(di)
+
+    feat_f.close()
     return instances
 
 
@@ -362,11 +376,7 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
 
     :rtype: FrekiAnalysis
     """
-    feat_path = get_feat_path(path)
-
-    path_rel = os.path.abspath(path)
-    feat_rel = os.path.abspath(feat_path)
-
+    feat_path = get_feat_path(path, kwargs.get('gzip'))
     # -------------------------------------------
     # Create a list of measurements, and associated labels.
     # -------------------------------------------
@@ -389,53 +399,59 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
     else:
         line_instances = []
 
-        LOG.info('Opening file "{}" for feature extraction to file "{}"...'.format(path_rel, feat_rel))
+        LOG.info('Opening file "{}" for feature extraction to file "{}"...'.format(os.path.basename(path), os.path.basename(feat_path)))
 
         os.makedirs(os.path.dirname(feat_path), exist_ok=True)
-        with open(feat_path, 'w', encoding='utf-8') as train_f:
 
-            fi = FrekiInfo(fonts=fd.fonts(),
-                           llxs=fd.llxs())
+        if kwargs.get('gzip'):
+            train_f = GzipFile(feat_path, 'w')
+        else:
+            train_f = open(feat_path, 'wb')
 
-            # 1) Start by getting the features for this
-            #    particular line...
-            feat_dict = {}
-            for line in fd.lines():
-                if getbool(kwargs, 'text_feats_enabled'):
-                    feat_dict[line.lineno] = get_textfeats(line, **kwargs)
+        fi = FrekiInfo(fonts=fd.fonts(),
+                       llxs=fd.llxs())
 
-                if getbool(kwargs, 'freki_feats_enabled'):
-                    feat_dict[line.lineno].update(get_frekifeats(line, fi, **kwargs))
+        # 1) Start by getting the features for this
+        #    particular line...
+        feat_dict = {}
+        for line in fd.lines():
+            if getbool(kwargs, 'text_feats_enabled'):
+                feat_dict[line.lineno] = get_textfeats(line, **kwargs)
 
-            # 2) Now, add the prev/next line data as necessary
-            for line in fd.lines():
-                # Skip noisy (preceded with '*') tagged lines
-                label = line.tag
-                if label.startswith('*'):
-                    if skip_noisy: continue
-                    else: label = label.replace('*', '')
+            if getbool(kwargs, 'freki_feats_enabled'):
+                feat_dict[line.lineno].update(get_frekifeats(line, fi, **kwargs))
 
-                # Strip flags and multiple tags if
-                # needed
-                label = handle_label(label, **kwargs)
-                # label = fix_label_flags_multi(label)
+        # 2) Now, add the prev/next line data as necessary
+        for line in fd.lines():
+            # Skip noisy (preceded with '*') tagged lines
+            label = line.tag
+            if label.startswith('*'):
+                if skip_noisy: continue
+                else: label = label.replace('*', '')
 
-                if 'O' not in label:
-                    prev_line = line.doc.get_line(line.lineno-1)
-                    if (line.span_id and prev_line and
-                            prev_line.span_id and
-                            line.span_id == prev_line.span_id):
-                        bi_status = 'I'
-                    else:
-                        bi_status = 'B'
+            # Strip flags and multiple tags if
+            # needed
+            label = handle_label(label, **kwargs)
+            # label = fix_label_flags_multi(label)
 
-                    label = '{}-{}'.format(bi_status, label)
+            if 'O' not in label:
+                prev_line = line.doc.get_line(line.lineno-1)
+                if (line.span_id and prev_line and
+                        prev_line.span_id and
+                        line.span_id == prev_line.span_id):
+                    bi_status = 'I'
+                else:
+                    bi_status = 'B'
 
-                all_feats = get_all_line_feats(feat_dict, line.lineno, **kwargs)
-                li = DataInstance(label, all_feats)
-                line_instances.append(li)
+                label = '{}-{}'.format(bi_status, label)
 
-                write_training_vector(li, train_f)
+            all_feats = get_all_line_feats(feat_dict, line.lineno, **kwargs)
+            li = DataInstance(label, all_feats)
+            line_instances.append(li)
+
+            write_training_vector(li, train_f)
+
+        train_f.close()
 
     return FrekiAnalysis(line_instances, fd, path)
 
@@ -445,13 +461,13 @@ def write_training_vector(li, out=sys.stdout):
     :type li: StringInstance
     :type out: TextIOBase
     """
-    out.write('{:s}'.format(li.label))
+    out.write('{:s}'.format(li.label).encode(encoding='utf-8'))
     for feat in sorted(li.feats.keys()):
         val = li.feats[feat]
         val_str = 1 if val else 0
         if val_str:
-            out.write('\t{}:{}'.format(feat, val_str))
-    out.write('\n')
+            out.write('\t{}:{}'.format(feat, val_str).encode(encoding='utf-8'))
+    out.write('\n'.encode(encoding='utf-8'))
 
 
 # =============================================================================
@@ -770,81 +786,6 @@ def label_sort(l):
         return float('inf')
 
 
-class ClassifierInfo():
-    """
-    This is a class for storing information about
-    the mallet classifier, such as which features are
-    the most informative, and what labels are among
-    those that are expected to be seen.
-    """
-
-    def __init__(self):
-        self.featdict = defaultdict(partial(defaultdict, float))
-        self.labels = set([])
-
-    def add_feat(self, label, feat, weight):
-        self.featdict[feat][label] = float(weight)
-        self.labels.add(label)
-
-    def write_features(self, out=sys.stdout, limit=30):
-
-        vals = []
-        defaults = []
-        for feat in self.featdict.keys():
-            for label, val in self.featdict[feat].items():
-                if feat == '<default>':
-                    defaults.append((feat, label, val))
-                else:
-                    vals.append((feat, label, val))
-
-        defaults = sorted(defaults, key=lambda x: label_sort(x[1]))
-
-        # If limit is None, set it to dump all features.
-        if limit is None:
-            limit = len(vals)
-
-        vals = sorted(vals, key=lambda x: abs(x[2]), reverse=True)[:limit]
-
-        longest_featname = max([len(x[0]) for x in vals])
-        longest_label = max([len(x[1]) for x in vals] + [5])
-
-        format_str = '{{:{}}}\t{{:{}}}\t{{:<5.6}}\n'.format(longest_featname, longest_label)
-
-        out.write(format_str.format('feature', 'label', 'weight'))
-        linesep = '-' * (longest_featname + longest_label + 10) + '\n'
-        out.write(linesep)
-        for d in defaults:
-            out.write(format_str.format(*d))
-        out.write(linesep)
-        for val in vals:
-            out.write(format_str.format(*val))
-
-
-def combine_feat_files(pathlist, out_path=None):
-    """
-
-    :param pathlist:
-    :param out_path:
-    :return:
-    """
-    # Create the training file.
-
-    if out_path is None:
-        combined_f = NamedTemporaryFile(mode='w', encoding='utf-8', delete=False)
-        out_path = combined_f.name
-    else:
-        combined_f = open(out_path, 'w', encoding='utf-8')
-
-    # -------------------------------------------
-    # 1) Combine all the instances in the files...
-    # -------------------------------------------
-    for path in pathlist:
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'r', encoding='utf-8') as f:
-            for line in f:
-                combined_f.write(line)
-    combined_f.close()
-    return out_path
 
 
 # =============================================================================
@@ -1407,10 +1348,132 @@ def nfold_traintest(train_docs, test_docs, **kwargs):
 def true_val(s):
     """:type s: str
     :rtype: bool"""
-    if str(s).lower() in ['1', 'on', 't', 'true', 'enabled']:
+    if str(s).lower() in ['1', 'on', 't', 'true', 'enabled', 'y', 'yes']:
         return True
-    elif str(s).lower() in ['0', 'off', 'f', 'false', 'disabled']:
+    elif str(s).lower() in ['0', 'off', 'f', 'false', 'disabled', 'n', 'no']:
         return False
+    else:
+        raise ArgumentTypeError("Invalid truth value")
+
+# =============================================================================
+# Different Arguments
+# =============================================================================
+
+def train(args, fl):
+    if os.path.exists(args.get('classifier_path')) and not args.get('overwrite_model'):
+        LOG.critical('Classifier model file "{}" exists, and overwrite not forced. Aborting training.'.format(
+            args.get('classifier_path')))
+        sys.exit(2)
+    cw = LogisticRegressionWrapper()
+    data = extract_feats(fl, skip_noisy=True, **args)
+    train_classifier(cw, data, **args)
+
+def test(args, fl):
+    LOG.log(NORM_LEVEL, "Beginning classification...")
+    classify_docs(fl, **args)
+    LOG.log(NORM_LEVEL, "Classification complete.")
+
+def testdb(args, fl):
+    LOG.log(NORM_LEVEL, "Beginning classification from db...")
+    db_path = args.get('db', None)
+    if not os.path.exists(db_path):
+        LOG.critical('Specified database "{}" does not exist!'.format(db_path))
+        sys.exit(2)
+
+    # Get the doc ids out of the database
+    db = sqlite3.connect(args.get('db', None))
+    c = db.cursor()
+    results = list(c.execute("SELECT * FROM docs WHERE posprob > 0.5").fetchall())
+    doc_ids = set([str(r[0]) for r in results])
+
+    # Now, search the search path to create the list of documents.
+    search_path = args.get('search_path')
+    found_files = []
+    for root_dir, dirs, filenames in os.walk(search_path):
+        for filename in filenames:
+            doc_id_m = re.search('(.*)\.freki(?:\.gz)?', filename)
+            if doc_id_m:
+                if doc_id_m.group(1) in doc_ids:
+                    found_files.append(os.path.join(root_dir, doc_id_m.group(0)))
+
+    classify_docs(found_files, **args)
+
+
+
+
+def eval(args, fl):
+    LOG.log(NORM_LEVEL, "Beginning evaluation...")
+    eval_files(fl, **args)
+
+def testeval(args, fl):
+    test(args, fl)
+    classified_paths = [get_classified_path(p, args.get('classified_dir')) for p in fl]
+    eval(args, classified_paths)
+
+def traintesteval(args, fl, ep):
+    train(args, fl)
+    testeval(args, ep)
+
+def nfold(args, fl):
+    ratio = float(args.get('nfold_ratio', 0.9))
+    iters = int(args.get('nfold_iters', 10))
+    seed = args.get('nfold_seed', None)
+    dir = args.get('nfold_dir', os.getcwd())
+
+    # Set a random seed to shuffle the data
+    r = Random()
+    r.seed(seed)
+
+    # Next, shuffle the filelist
+    r.shuffle(fl)
+
+    # Now, get the train/test windows
+    num_docs = len(fl)
+    iter_index = int(num_docs * ratio)
+
+    p_list = []
+    r_list = []
+    f_list = []
+
+    # p = Pool(4)
+
+    # -------------------------------------------
+    # Extract features only once, so we don't have
+    # to do so at each iteration.
+    # -------------------------------------------
+    extract_feats(fl, **args)
+    # -------------------------------------------
+
+    def nfold_callback(result):
+        iter_p, iter_r, iter_f = result
+        p_list.append(iter_p)
+        r_list.append(iter_r)
+        f_list.append(iter_f)
+
+    for iter in range(iters):
+        iter_args = {}
+        iter_args.update(**args)
+        iter_args['overwrite_model'] = True
+        iter_args['classifier_path'] = os.path.join(dir, 'nfold_{:02}.model'.format(iter))
+        iter_args['overwrite'] = False
+
+        train_docs = fl[:iter_index]
+        test_docs = fl[iter_index:]
+
+        nfold_callback(nfold_traintest(train_docs, test_docs, **iter_args))
+        # p.apply_async(nfold_traintest, args=(train_docs, test_docs), kwds=iter_args, callback=nfold_callback)
+
+        # Do stuff and reshuffle
+        fl = test_docs + train_docs
+
+    # p.close()
+    # p.join()
+
+    def mean_stddev(lst): return ('{:.3} (\u03c3={:.3})'.format(statistics.mean(lst), statistics.stdev(lst)))
+
+    print('P', mean_stddev(p_list))
+    print('R', mean_stddev(r_list))
+    print('F', mean_stddev(f_list))
 
 # =============================================================================
 # MAIN
@@ -1433,6 +1496,7 @@ if __name__ == '__main__':
                                help='Overwrite previously generated feature files.')
     common_parser.add_argument('--profile', help='Performance profile the app.', action='store_true')
     common_parser.add_argument('--feat-dir', help='Change the path to output/read features.')
+    common_parser.add_argument('--gzip-feats', dest='gzip', help='Whether to gzip the features or not.', type=true_val, default=True)
 
     # -------------------------------------------
     # Load the default config file, if it exists.
@@ -1529,7 +1593,7 @@ if __name__ == '__main__':
     # -------------------------------------------
     train_nf_parser = ArgumentParser(add_help=False)
     train_nf_parser.add_argument('--use-bi-labels', type=int, default=conf.get('labels', 'use_bi_labels', fallback=1))
-    train_nf_parser.add_argument('--max-features', type=int, default=-1)
+    train_nf_parser.add_argument('--max-features', type=int, default=conf.get('featuresets', 'max_features', fallback=-1))
     train_nf_parser.add_argument('--train-files', help='Path to the files for training the classifier.',
                                  required=requires_glob('train_files'),
                                  default=get_path('train_files'))
@@ -1545,18 +1609,29 @@ if __name__ == '__main__':
     # -------------------------------------------
     train_p = subparsers.add_parser('train', parents=[common_parser, tt_parser, train_nf_parser])
 
-
+    # -------------------------------------------
+    # Common parser for testing...
+    # -------------------------------------------
+    test_common_p = ArgumentParser(add_help=False)
+    test_common_p.add_argument('--classified-dir', help='Directory to output the classified documents.',
+                               required=requires_path('classified_dir'),
+                               default=get_path('classified_dir'))
 
     # -------------------------------------------
     # TESTING
     # -------------------------------------------
-    test_p = subparsers.add_parser('test', parents=[common_parser, tt_parser])
+    test_p = subparsers.add_parser('test', parents=[common_parser, tt_parser, test_common_p])
     test_p.add_argument('--test-files', help='Path to the files to be classified.',
                         required=requires_glob('test_files'),
                         default=get_path('test_files'))
-    test_p.add_argument('--classified-dir', help='Directory to output the classified documents.',
-                        required=requires_path('classified_dir'),
-                        default=get_path('classified_dir'))
+
+
+    # -------------------------------------------
+    # Input from doc-classify output
+    # -------------------------------------------
+    test_db_p = subparsers.add_parser('testdb', parents=[common_parser, tt_parser, test_common_p])
+    test_db_p.add_argument('-d', '--db', help='Path to the doc classification database', required=True)
+    test_db_p.add_argument('--search-path', help='Path in which to search for the doc_ids', required=True)
 
     # -------------------------------------------
     # EVAL
@@ -1666,90 +1741,15 @@ if __name__ == '__main__':
     # Handle verbosity
     # -------------------------------------------
     verbosity = argdict.get('verbose', 0)
+    def setloglevel(level):
+        LOG.setLevel(level)
+        LOG.handlers[0].setLevel(level)
+
     if verbosity == 1:
-        LOG.setLevel(logging.INFO)
+        setloglevel(logging.INFO)
     elif verbosity >= 2:
-        LOG.setLevel(logging.DEBUG)
+        setloglevel(logging.DEBUG)
 
-
-    def train(args, fl):
-        if os.path.exists(args.get('classifier_path')) and not args.get('overwrite_model'):
-            LOG.critical('Classifier model file "{}" exists, and overwrite not forced. Aborting training.'.format(args.get('classifier_path')))
-            sys.exit(2)
-        cw = LogisticRegressionWrapper()
-        data = extract_feats(fl, cw, skip_noisy=True, **args)
-        train_classifier(cw, data, **args)
-
-    def test(args, fl):
-        LOG.log(NORM_LEVEL, "Beginning classification...")
-        classify_docs(fl, **args)
-        LOG.log(NORM_LEVEL, "Classification complete.")
-
-    def eval(args, fl):
-        LOG.log(NORM_LEVEL, "Beginning evaluation...")
-        eval_files(fl, **args)
-
-    def testeval(args, fl):
-        test(args, fl)
-        classified_paths = [get_classified_path(p, args.get('classified_dir')) for p in fl]
-        eval(args, classified_paths)
-
-    def traintesteval(args, fl, ep):
-        train(args, fl)
-        testeval(args, ep)
-
-    def nfold(args, fl):
-        ratio = float(args.get('nfold_ratio', 0.9))
-        iters = int(args.get('nfold_iters', 10))
-        seed = args.get('nfold_seed', None)
-        dir = args.get('nfold_dir', os.getcwd())
-
-        # Set a random seed to shuffle the data
-        r = Random()
-        r.seed(seed)
-
-        # Next, shuffle the filelist
-        r.shuffle(fl)
-
-        # Now, get the train/test windows
-        num_docs = len(fl)
-        iter_index = int(num_docs * ratio)
-
-        p_list = []
-        r_list = []
-        f_list = []
-
-        # p = Pool(4)
-
-        def nfold_callback(result):
-            iter_p, iter_r, iter_f = result
-            p_list.append(iter_p)
-            r_list.append(iter_r)
-            f_list.append(iter_f)
-
-        for iter in range(iters):
-            iter_args = {}
-            iter_args.update(**args)
-            iter_args['overwrite_model'] = True
-            iter_args['classifier_path'] = os.path.join(dir, 'nfold_{:02}.model'.format(iter))
-
-            train_docs = fl[:iter_index]
-            test_docs = fl[iter_index:]
-
-            nfold_callback(nfold_traintest(train_docs, test_docs, **iter_args))
-            # p.apply_async(nfold_traintest, args=(train_docs, test_docs), kwds=iter_args, callback=nfold_callback)
-
-            # Do stuff and reshuffle
-            fl = test_docs + train_docs
-
-        # p.close()
-        # p.join()
-
-        def mean_stddev(lst): return ('{:.3} (\u03c3={:.3})'.format(statistics.mean(lst), statistics.stdev(lst)))
-
-        print('P',mean_stddev(p_list))
-        print('R',mean_stddev(r_list))
-        print('F',mean_stddev(f_list))
 
     # Switch between the commands
     import cProfile
@@ -1772,3 +1772,6 @@ if __name__ == '__main__':
         traintesteval(argdict, train_filelist, eval_filelist)
     elif args.subcommand == 'nfold':
         nfold(argdict, train_filelist)
+    elif args.subcommand == 'testdb':
+        testdb(argdict, args.db)
+

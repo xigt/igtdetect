@@ -1069,21 +1069,18 @@ class ClassificationResults(object):
 def get_classifications(filelist, cw, overwrite=None, **kwargs):
     """:rtype: Iterable[ClassificationResults]"""
 
-    results = []
-
     for path in filelist:
         analysis = extract_feats_for_path(path, overwrite, skip_noisy=True, **kwargs)
 
         # If the file had no features, skip it...
         if not analysis.data:
+            LOG.error('No features found for file "{}"'.format(path))
             continue
 
         test_classification = cw.test(analysis.data)
 
-        cr = ClassificationResults(analysis, test_classification)
-        results.append(cr)
+        yield ClassificationResults(analysis, test_classification)
 
-    return results
 
 def selfeval_docs(filelist, classifier_path=None, overwrite=None, debug_on=False, **kwargs):
     cw = ClassifierWrapper.load(classifier_path)
@@ -1381,12 +1378,14 @@ def testdb(args, fl):
         sys.exit(2)
 
     # Get the doc ids out of the database
+    LOG.log(NORM_LEVEL, "Obtaining list of probable linguistic documents...")
     db = sqlite3.connect(args.get('db', None))
     c = db.cursor()
     results = list(c.execute("SELECT * FROM docs WHERE posprob > 0.5").fetchall())
     doc_ids = set([str(r[0]) for r in results])
 
     # Now, search the search path to create the list of documents.
+    LOG.log(NORM_LEVEL, "Locating relevant documents...")
     search_path = args.get('search_path')
     found_files = []
     for root_dir, dirs, filenames in os.walk(search_path):

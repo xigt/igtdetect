@@ -414,6 +414,7 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
         # 1) Start by getting the features for this
         #    particular line...
         feat_dict = {}
+
         for line in fd.lines():
             if getbool(kwargs, 'text_feats_enabled'):
                 feat_dict[line.lineno] = get_textfeats(line, **kwargs)
@@ -1138,7 +1139,7 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         #
         # Optionally, write out the raw classification distribution.
         # -------------------------------------------
-        cur_span = []
+        cur_span = OrderedDict()
         total_detected = 0
 
         old_lines = list(result.doc.lines())
@@ -1156,21 +1157,28 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
 
             # Set the label for the line in the working block
             # before potentially writing it out.
-            fl = FrekiLine(line,
-                           tag=dist.best_class,
-                           line=line.lineno)
-            fl.fonts = line.fonts
+            # fl = FrekiLine(line,
+            #                tag=dist.best_class,
+            #                line=line.lineno)
+            # fl.fonts = line.fonts
 
-            result.doc.set_line(line.lineno, fl)
+            line.tag = dist.best_class
 
+            # result.doc.set_line(line.lineno, fl)
+
+            # Write out what's currently detected.
             if dist.best_class == 'O' and detected_dir:
                 if cur_span:
-                    detected_f.write('\n'.join(cur_span))
-                    detected_f.write('\n\n')
-                    cur_span = []
+                    # detected_f.write('\n'.join(cur_span))
+                    # detected_f.write('\n\n')
+                    for elt in cur_span.values():
+                        detected_f.write(str(elt)+'\n')
+                    detected_f.write('\n')
+                    cur_span = OrderedDict()
                     total_detected += 1
             else:
-                cur_span.append('{:<8}{}'.format(dist.best_class, fl))
+                # cur_span.append('{:<8}{}'.format(dist.best_class, fl))
+                cur_span[line.block.block_id] = line.block
 
         # Write out the classified file.
         if classified_dir:
@@ -1370,7 +1378,7 @@ def test(args, fl):
     classify_docs(fl, **args)
     LOG.log(NORM_LEVEL, "Classification complete.")
 
-def testdb(args, fl):
+def testdb(args):
     LOG.log(NORM_LEVEL, "Beginning classification from db...")
     db_path = args.get('db', None)
     if not os.path.exists(db_path):
@@ -1395,6 +1403,7 @@ def testdb(args, fl):
                 if doc_id_m.group(1) in doc_ids:
                     found_files.append(os.path.join(root_dir, doc_id_m.group(0)))
 
+    LOG.log(NORM_LEVEL, "Beginning classification.")
     classify_docs(found_files, **args)
 
 
@@ -1615,6 +1624,9 @@ if __name__ == '__main__':
     test_common_p.add_argument('--classified-dir', help='Directory to output the classified documents.',
                                required=requires_path('classified_dir'),
                                default=get_path('classified_dir'))
+    test_common_p.add_argument('--detected-dir',
+                               required=requires_path('detected_dir'),
+                               default=get_path('detected_dir'))
 
     # -------------------------------------------
     # TESTING
@@ -1772,5 +1784,5 @@ if __name__ == '__main__':
     elif args.subcommand == 'nfold':
         nfold(argdict, train_filelist)
     elif args.subcommand == 'testdb':
-        testdb(argdict, args.db)
+        testdb(argdict)
 

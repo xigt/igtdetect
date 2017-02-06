@@ -97,7 +97,7 @@ class FrekiAnalysis(object):
     """
     def __init__(self, data, doc, path):
         """
-        :type data: list[DataInstance]
+        :type data: Iterable[DataInstance]
         :type doc: FrekiDoc
         """
         self.doc = doc
@@ -261,22 +261,34 @@ def get_weight_path(path):
     return os.path.join(DEBUG_DIR(args), _path_rename(path, '_weights.txt'))
 
 def handle_label(label, **kwargs):
+    """
+    Given a label, return a label without the multiple
+    flags/etc
 
+    :param label:
+    :param kwargs:
+    :return:
+    """
+    # --1) Start by stripping the '+' elements
+    #      off any label if we are not attempting
+    #      to learn flags.
     new_label = label
+    if getbool(kwargs, STRIP_FLAGS): new_label = new_label.split('+')[0]
 
+    # --2) Now, if we are using B/I labels for beginning/inside
+    #      distinctions...
     if not getbool(kwargs, USE_BI_LABELS) and label[0:2] in ['B-', 'I-']:
         new_label = new_label[2:]
 
+        # 2b) if we are stripping B/I labels AND we are
+        #     stripping multi-tag labels, remove the
+        #     multi-label part too.
         if not getbool(kwargs, USE_MULTI_LABELS):
             new_label = new_label.split('-')[0]
 
     # If we ARE keeping B/I labels, but not multi labels...
     elif not getbool(kwargs, USE_MULTI_LABELS):
         new_label = new_label[0:2]+new_label[2:].split('-')[0]
-
-    if getbool(kwargs, STRIP_FLAGS):
-        new_label = new_label.split('+')[0]
-
 
     return new_label
 
@@ -333,12 +345,11 @@ def extract_feats(filelist, overwrite=False, skip_noisy=True, **kwargs):
     return data
 
 
-def load_feats(path):
+def load_feats(path, **kwargs):
     """
     Load features from a saved svm-lite like file
-    :rtype:
+    :rtype: Iterable[DataInstance]
     """
-    instances = []
 
     # Load gzipped feat paths too.
     if path.endswith('.gz'):
@@ -354,11 +365,87 @@ def load_feats(path):
         for feat, value in [pair.split(':') for pair in data[1:]]:
             line_feats[feat] = bool(value)
 
-        di = DataInstance(label, line_feats)
-        instances.append(di)
+        di = DataInstance(handle_label(label, **kwargs), line_feats)
+        yield di
 
     feat_f.close()
-    return instances
+
+
+def write_instances(fd, feat_path, skip_noisy=True, **kwargs):
+    """
+        Perform feature extraction for a single file.
+
+        The output files are in svmlight format, namely:
+
+            LABEL   feature_1:value_1   feature_2:value_2 ...etc
+
+        The "skip_noisy" parameter is intended for training data that
+        was created automatically, and for which the labels were mapped,
+        but seem unlikely to be correct. Such noisy labels are preceded by
+        an asterisk.
+
+        :rtype: Iterable[DataInstance]
+        """
+
+    os.makedirs(os.path.dirname(feat_path), exist_ok=True)
+
+    if kwargs.get('gzip'):
+        train_f = GzipFile(feat_path, 'w')
+    else:
+        train_f = open(feat_path, 'wb')
+
+    fi = FrekiInfo(fonts=fd.fonts(),
+                   llxs=fd.llxs())
+
+    # 1) Start by getting the features for this
+    #    particular line...
+    feat_dict = {}
+
+    for line in fd.lines():
+        if getbool(kwargs, 'text_feats_enabled'):
+            feat_dict[line.lineno] = get_textfeats(line, **kwargs)
+
+        if getbool(kwargs, 'freki_feats_enabled'):
+            feat_dict[line.lineno].update(get_frekifeats(line, fi, **kwargs))
+
+    # 2) Now, add the prev/next line data as necessary
+    for line in fd.lines():
+        # Skip noisy (preceded with '*') tagged lines
+        label = line.tag
+        if label.startswith('*'):
+            if skip_noisy:
+                continue
+            else:
+                label = label.replace('*', '')
+
+        # Strip flags and multiple tags if
+        # needed
+        # label = handle_label(label, **kwargs)
+        # label = fix_label_flags_multi(label)
+
+        if 'O' not in label:
+            prev_line = line.doc.get_line(line.lineno - 1)
+            if (line.span_id and prev_line and
+                    prev_line.span_id and
+                        line.span_id == prev_line.span_id):
+                bi_status = 'I'
+            else:
+                bi_status = 'B'
+
+            label = '{}-{}'.format(bi_status, label)
+
+        all_feats = get_all_line_feats(feat_dict, line.lineno, **kwargs)
+
+        # Write out the training vector with the full label
+        li = DataInstance(label, all_feats)
+        write_training_vector(li, train_f)
+
+        # Return the instance with the rewritten label, according
+        # to the settings.
+        li = DataInstance(handle_label(label, **kwargs), all_feats)
+        yield li
+
+    train_f.close()
 
 
 def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
@@ -377,6 +464,7 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
     :rtype: FrekiAnalysis
     """
     feat_path = get_feat_path(path, kwargs.get('gzip'))
+
     # -------------------------------------------
     # Create a list of measurements, and associated labels.
     # -------------------------------------------
@@ -394,65 +482,10 @@ def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
     if os.path.exists(feat_path) and (not overwrite):
         LOG.info('File "{}" already generated, not regenerating (use -f to force)...'.format(feat_path))
 
-        line_instances = load_feats(feat_path)
+        line_instances = load_feats(feat_path, **kwargs)
 
     else:
-        line_instances = []
-
-        LOG.info('Opening file "{}" for feature extraction to file "{}"...'.format(os.path.basename(path), os.path.basename(feat_path)))
-
-        os.makedirs(os.path.dirname(feat_path), exist_ok=True)
-
-        if kwargs.get('gzip'):
-            train_f = GzipFile(feat_path, 'w')
-        else:
-            train_f = open(feat_path, 'wb')
-
-        fi = FrekiInfo(fonts=fd.fonts(),
-                       llxs=fd.llxs())
-
-        # 1) Start by getting the features for this
-        #    particular line...
-        feat_dict = {}
-
-        for line in fd.lines():
-            if getbool(kwargs, 'text_feats_enabled'):
-                feat_dict[line.lineno] = get_textfeats(line, **kwargs)
-
-            if getbool(kwargs, 'freki_feats_enabled'):
-                feat_dict[line.lineno].update(get_frekifeats(line, fi, **kwargs))
-
-        # 2) Now, add the prev/next line data as necessary
-        for line in fd.lines():
-            # Skip noisy (preceded with '*') tagged lines
-            label = line.tag
-            if label.startswith('*'):
-                if skip_noisy: continue
-                else: label = label.replace('*', '')
-
-            # Strip flags and multiple tags if
-            # needed
-            label = handle_label(label, **kwargs)
-            # label = fix_label_flags_multi(label)
-
-            if 'O' not in label:
-                prev_line = line.doc.get_line(line.lineno-1)
-                if (line.span_id and prev_line and
-                        prev_line.span_id and
-                        line.span_id == prev_line.span_id):
-                    bi_status = 'I'
-                else:
-                    bi_status = 'B'
-
-                label = '{}-{}'.format(bi_status, label)
-
-            all_feats = get_all_line_feats(feat_dict, line.lineno, **kwargs)
-            li = DataInstance(label, all_feats)
-            line_instances.append(li)
-
-            write_training_vector(li, train_f)
-
-        train_f.close()
+        line_instances = write_instances(fd, feat_path, skip_noisy=skip_noisy, **kwargs)
 
     return FrekiAnalysis(line_instances, fd, path)
 
@@ -1226,7 +1259,7 @@ def eval_files(filelist, out_path=None, csv=False, gold_dir=None, **kwargs):
         if not os.path.exists(gold_path):
             LOG.warning('No corresponding gold file was found for the evaluation file "{}"'.format(eval_path))
         else:
-            eval_file(eval_path, gold_path, ev=ev, old_se=old_se)
+            eval_file(eval_path, gold_path, ev=ev, old_se=old_se, **kwargs)
 
     # Now, write out the sc results.
     delimiter = '\t'
@@ -1251,17 +1284,10 @@ def eval_files(filelist, out_path=None, csv=False, gold_dir=None, **kwargs):
 
     out_f.close()
 
-def fix_label_flags_multi(label):
-    if STRIP_FLAGS(conf):
-        label = label.split('+')[0]
-
-    if not USE_MULTI_LABELS(conf):
-        label = label.split('-')[0]
-
     return label
 
 
-def eval_file(eval_path, gold_path, ev=None, old_se=None, outstream=sys.stdout):
+def eval_file(eval_path, gold_path, ev=None, old_se=None, outstream=sys.stdout, **kwargs):
     """
     Look for the filename that matches the specified file
     """
@@ -1282,8 +1308,8 @@ def eval_file(eval_path, gold_path, ev=None, old_se=None, outstream=sys.stdout):
         # Compare the labels across lines.
         # -------------------------------------------
         for line in eval_fd.lines():
-            eval_label = fix_label_flags_multi(eval_fd.get_line(line.lineno).tag)
-            gold_label = fix_label_flags_multi(gold_fd.get_line(line.lineno).tag)
+            eval_label = handle_label(eval_fd.get_line(line.lineno).tag, **kwargs)
+            gold_label = handle_label(gold_fd.get_line(line.lineno).tag, **kwargs)
             ev.le.add_eval_pair(gold_label, eval_label)
 
         # -------------------------------------------

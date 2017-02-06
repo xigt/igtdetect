@@ -89,7 +89,7 @@ class FrekiInfo(object):
         self.def_font = safe_mode(fonts)
         self.llx = safe_mode(llxs)
 
-class FrekiAnalysis(object):
+class DocData(object):
     """
     Wrap the features, labels, and
     full document in an object to output
@@ -101,11 +101,30 @@ class FrekiAnalysis(object):
         :type doc: FrekiDoc
         """
         self.doc = doc
-        self.data = data
+        self.data = list(data)
         self.path = path
 
-    def tags(self, **kwargs):
-        return [handle_label(d.label, **kwargs) for d in self.data]
+    def feats(self):
+        for di in self.data:
+            yield di.feats
+
+    def labels(self):
+        for di in self.data:
+            yield di.label
+
+    @classmethod
+    def load(cls, path, gzip=True, overwrite=True, **kwargs):
+        """:param path: Path to the freki document"""
+        fd = FrekiDoc.read(path)
+        feat_path = get_feat_path(path, gzip=gzip)
+        if overwrite or not os.path.exists(feat_path):
+            feats = write_instances(fd, feat_path, gzip=gzip, **kwargs)
+        else:
+            feats = load_feats(feat_path, **kwargs)
+
+        return cls(feats, fd, path)
+
+
 
 def get_textfeats(line, **kwargs):
     """
@@ -299,12 +318,11 @@ def handle_label(label, **kwargs):
 # -------------------------------------------
 # Perform feature extraction.
 # -------------------------------------------
-def extract_feats(filelist, overwrite=False, skip_noisy=True, **kwargs):
+def extract_feats(filelist, overwrite=False, gzip=True, **kwargs):
     """
     Perform feature extraction over a list of files.
 
-    Call extract_feat_for_path() in parallel for a speed boost.
-    :rtype: list[DataInstance]
+    :rtype: Iterable[DocData]
     """
 
     # -------------------------------------------
@@ -313,43 +331,21 @@ def extract_feats(filelist, overwrite=False, skip_noisy=True, **kwargs):
     # represents a line, and each dictionary entry represents
     # a feature:value pair.
     # -------------------------------------------
-    data = []
-
-    # p = Pool()
-    l = Lock()
-
-    def feat_callback(result):
-        """:type result: FrekiAnalysis"""
-        l.acquire()
-        data.extend(result.data)
-        l.release()
-
     LOG.log(NORM_LEVEL, "Extracting features for training.")
+    lines = 0
+    docs = 0
     for path in filelist:
-        # p.apply_async(extract_feats_for_path, args=[path, overwrite, skip_noisy], callback=callback)
-        feat_callback(extract_feats_for_path(path, overwrite=overwrite, skip_noisy=skip_noisy, **kwargs))
-
-    # p.close()
-    # p.join()
-    LOG.log(NORM_LEVEL, "Extraction complete. {} lines processed in {} documents.".format(len(data), len(filelist)))
-
-    # -------------------------------------------
-    # Regularize the labels in the file.
-    # -------------------------------------------
-    for datum in data:
-        datum.label = handle_label(datum.label, **kwargs)
-
-    # -------------------------------------------
-    # Turn the extracted feature dict into vectors for sklearn.
-    # -------------------------------------------
-    return data
-
+        dd = DocData.load(path, gzip=gzip, overwrite=overwrite, **kwargs)
+        lines += len(dd.data)
+        docs += 1
+        yield dd
 
 def load_feats(path, **kwargs):
     """
     Load features from a saved svm-lite like file
-    :rtype: Iterable[DataInstance]
+    :rtype: list[DataInstance]
     """
+    data_instances = []
 
     # Load gzipped feat paths too.
     if path.endswith('.gz'):
@@ -362,16 +358,18 @@ def load_feats(path, **kwargs):
         line_feats = {}
         data = line_str.split()
         label = data[0]
+
         for feat, value in [pair.split(':') for pair in data[1:]]:
             line_feats[feat] = bool(value)
 
         di = DataInstance(handle_label(label, **kwargs), line_feats)
-        yield di
+        data_instances.append(di)
 
     feat_f.close()
+    return data_instances
 
 
-def write_instances(fd, feat_path, skip_noisy=True, **kwargs):
+def write_instances(fd, feat_path, **kwargs):
     """
         Perform feature extraction for a single file.
 
@@ -384,7 +382,7 @@ def write_instances(fd, feat_path, skip_noisy=True, **kwargs):
         but seem unlikely to be correct. Such noisy labels are preceded by
         an asterisk.
 
-        :rtype: Iterable[DataInstance]
+        :rtype: list[DataInstance]
         """
 
     os.makedirs(os.path.dirname(feat_path), exist_ok=True)
@@ -400,8 +398,10 @@ def write_instances(fd, feat_path, skip_noisy=True, **kwargs):
     # 1) Start by getting the features for this
     #    particular line...
     feat_dict = {}
+    data_instances = []
+    lines = list(fd.lines())
 
-    for line in fd.lines():
+    for line in lines:
         if getbool(kwargs, 'text_feats_enabled'):
             feat_dict[line.lineno] = get_textfeats(line, **kwargs)
 
@@ -409,14 +409,12 @@ def write_instances(fd, feat_path, skip_noisy=True, **kwargs):
             feat_dict[line.lineno].update(get_frekifeats(line, fi, **kwargs))
 
     # 2) Now, add the prev/next line data as necessary
-    for line in fd.lines():
+    for line in lines:
         # Skip noisy (preceded with '*') tagged lines
         label = line.tag
-        if label.startswith('*'):
-            if skip_noisy:
-                continue
-            else:
-                label = label.replace('*', '')
+        noisy = label.startswith('*')
+        if noisy:
+            label = label.replace('*', '')
 
         # Strip flags and multiple tags if
         # needed
@@ -433,6 +431,8 @@ def write_instances(fd, feat_path, skip_noisy=True, **kwargs):
                 bi_status = 'B'
 
             label = '{}-{}'.format(bi_status, label)
+            if noisy:
+                label = '*' + label
 
         all_feats = get_all_line_feats(feat_dict, line.lineno, **kwargs)
 
@@ -443,51 +443,10 @@ def write_instances(fd, feat_path, skip_noisy=True, **kwargs):
         # Return the instance with the rewritten label, according
         # to the settings.
         li = DataInstance(handle_label(label, **kwargs), all_feats)
-        yield li
+        data_instances.append(li)
 
     train_f.close()
-
-
-def extract_feats_for_path(path, overwrite=False, skip_noisy=True, **kwargs):
-    """
-    Perform feature extraction for a single file.
-
-    The output files are in svmlight format, namely:
-
-        LABEL   feature_1:value_1   feature_2:value_2 ...etc
-
-    The "skip_noisy" parameter is intended for training data that
-    was created automatically, and for which the labels were mapped,
-    but seem unlikely to be correct. Such noisy labels are preceded by
-    an asterisk.
-
-    :rtype: FrekiAnalysis
-    """
-    feat_path = get_feat_path(path, kwargs.get('gzip'))
-
-    # -------------------------------------------
-    # Create a list of measurements, and associated labels.
-    # -------------------------------------------
-
-    # Read in the freki document, whether or
-    # not the features need to be reprocessed.
-    fd = FrekiDoc.read(path)
-
-
-    # -------------------------------------------
-    # Skip generating the text feature for this path
-    # if it's already been generated and the user
-    # has not asked to overwrite them.
-    # -------------------------------------------
-    if os.path.exists(feat_path) and (not overwrite):
-        LOG.info('File "{}" already generated, not regenerating (use -f to force)...'.format(feat_path))
-
-        line_instances = load_feats(feat_path, **kwargs)
-
-    else:
-        line_instances = write_instances(fd, feat_path, skip_noisy=skip_noisy, **kwargs)
-
-    return FrekiAnalysis(line_instances, fd, path)
+    return data_instances
 
 
 def write_training_vector(li, out=sys.stdout):
@@ -856,7 +815,7 @@ def train_classifier(cw, data, classifier_path=None, debug_on=False,
     LOG.log(NORM_LEVEL, 'Writing classifier out to "{}"'.format(classifier_path))
     cw.save(classifier_path)
 
-def assign_spans(fd):
+def assign_spans(fd, tags):
     """
     Assign span IDs to a document without them,
     assuming only that a span is a contiguous
@@ -867,19 +826,23 @@ def assign_spans(fd):
     """
     num_spans = 0
     last_tag = 'O'
-    for line in fd.lines():
-        if 'O' not in line.tag:
+
+    lines = list(fd.lines())
+
+    for i, line in enumerate(lines):
+
+        if 'O' not in tags[i]:
 
             # Increment if the last tag
             # was 'O'
-            if 'O' in last_tag:
+            if 'O' in last_tag or tags[i].startswith('B-'):
                 num_spans += 1
 
             line.span_id = 's{}'.format(num_spans)
         else:
             line.span_id = None
 
-        last_tag = line.tag
+        last_tag = tags[i]
 
 
 # =============================================================================
@@ -1069,81 +1032,86 @@ class LabelEvaluator(object):
 # Testing (Apply Classifier to new Documents)
 # =============================================================================
 
-class ClassificationDist(object):
-    def __init__(self, tups):
-        self.dict = {}
-        self.best = None
-        self.best_prob = 0.0
-        for label, prob in tups:
-            self.dict[label] = prob
-            if prob > self.best_prob:
-                self.best = label
+def get_classifications(docdata_list, cw):
+    """
+    Given a list of files, return an iterator for the classifications.
 
+    :type docdata_list: list[DocData]
+    :rtype: Iterable[tuple[DocData,list[Distribution]]]
+    """
 
-class ClassificationResults(object):
-    def __init__(self, analysis, label_dists):
-        """:type analysis: FrekiAnalysis
-            :type label_dists: list[Distribution]"""
-
-        self.analysis = analysis
-        self.label_dists = label_dists
-
-    def tags(self, **kwargs): return self.analysis.tags(**kwargs)
-
-    @property
-    def path(self): return self.analysis.path
-
-    @property
-    def doc(self): return self.analysis.doc
-
-    def best_labels(self, **kwargs):
-        for label_dist in self.label_dists:
-            yield handle_label(label_dist.best_class, **kwargs)
-
-def get_classifications(filelist, cw, overwrite=None, **kwargs):
-    """:rtype: Iterable[ClassificationResults]"""
-
-    for path in filelist:
-        analysis = extract_feats_for_path(path, overwrite, skip_noisy=True, **kwargs)
-
+    for dd in docdata_list:
         # If the file had no features, skip it...
-        if not analysis.data:
-            LOG.error('No features found for file "{}"'.format(path))
+        if not dd.data:
+            LOG.error('No features found for file "{}"'.format(dd.path))
             continue
 
-        test_classification = cw.test(analysis.data)
+        line_classifications = cw.test(dd.data)
 
-        yield ClassificationResults(analysis, test_classification)
+        yield dd, line_classifications
 
 
-def selfeval_docs(filelist, classifier_path=None, overwrite=None, debug_on=False, **kwargs):
+def selfeval_docs(docdata_list, classifier_path=None, **kwargs):
+    """
+    Given a list of documents, run classification on each, and evaluate
+    according to the original labels/spans given in the document itself.
+    """
+
     cw = ClassifierWrapper.load(classifier_path)
-    results = get_classifications(filelist, cw, overwrite, **kwargs)
-
+    results = get_classifications(docdata_list, cw, **kwargs)
 
     # We will now evaluate the classifications
     # against the files that were classified.
     le = LabelEvaluator()
     se = SpanEvaluator()
+
+
     for result in results:
-        for test_label, gold_label in zip(result.best_labels(**kwargs), result.tags(**kwargs)):
+        dd, dists = result
+        line_data = dd.data
+
+        test_labels = []
+        gold_labels = []
+
+        assert len(line_data) == len(dists)
+        for line_datum, dist in zip(line_data, dists):
+            gold_label = handle_label(line_datum.label, **kwargs).replace('*', '') # In case noisy label
+            test_label = handle_label(dist.best_class, **kwargs)
+
+            test_labels.append(test_label)
+            gold_labels.append(gold_label)
+
             le.add_eval_pair(gold_label, test_label)
 
-    prf = le.prf(['O'])
-    LOG.log(NORM_LEVEL, "P/R/F: {:.3f}/{:.3f}/{:.3f}".format(*prf))
-    return prf
+        old_spans = dd.doc.spans().copy()
+        assign_spans(dd.doc, test_labels)
+        new_spans = dd.doc.spans().copy()
+
+        se.add_spans(new_spans, old_spans)
+
+    non_o_prf = le.prf(['O'])
+    exact_span_prf = se.exact_prf()
+    partial_span_prf = se.partial_prf()
+
+    LOG.log(NORM_LEVEL, "Non-O P/R/F: {:.3f}/{:.3f}/{:.3f}".format(*non_o_prf))
+    LOG.log(NORM_LEVEL, "Span Exact P/R/F: {:.3f}/{:.3f}/{:.3f}".format(*exact_span_prf))
+    LOG.log(NORM_LEVEL, "Span Partial P/R/F: {:.3f}/{:.3f}/{:.3f}".format(*partial_span_prf))
+    return (non_o_prf, exact_span_prf, partial_span_prf)
 
 
-def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False,
-                  classified_dir=None, detected_dir=None,
-                  **kwargs):
+def classify_docs(docdata_list, classifier_path=None, debug_on=False,
+                  classified_dir=None, detected_dir=None, **kwargs):
+    """
+    :type docdata_list: list[DocData]
+    """
 
     cw = ClassifierWrapper.load(classifier_path)
     classes = sorted(cw.classes(), key=label_sort)
 
-    results = get_classifications(filelist, cw, overwrite, **kwargs)
+    results = get_classifications(docdata_list, cw)
 
-    for result in results:
+    for dd, dists in results:
+        assert isinstance(dd, DocData)
 
         # -------------------------------------------
         # Get ready to write the classified IGT instances out.
@@ -1152,19 +1120,19 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         # -------------------------------------------
         if classified_dir:
             os.makedirs(classified_dir, exist_ok=True)
-            classified_f = open(get_classified_path(result.path, classified_dir), 'w', encoding='utf-8')
+            classified_f = open(get_classified_path(dd.path, classified_dir), 'w', encoding='utf-8')
 
         if detected_dir:
             os.makedirs(detected_dir, exist_ok=True)
-            detected_f = open(get_detected_path(result.path, detected_dir), 'w', encoding='utf-8')
+            detected_f = open(get_detected_path(dd.path, detected_dir), 'w', encoding='utf-8')
 
         # -------------------------------------------
 
         # This file will contain the raw labelings from the classifier.
         if debug_on:
-            os.makedirs(os.path.dirname(get_raw_classification_path(result.path)), exist_ok=True)
-            LOG.log(NORM_LEVEL, 'Writing out raw classifications "{}"'.format(get_raw_classification_path(result.path)))
-            raw_classification_f = open(get_raw_classification_path(result.path), 'w')
+            os.makedirs(os.path.dirname(get_raw_classification_path(dd.path)), exist_ok=True)
+            LOG.log(NORM_LEVEL, 'Writing out raw classifications "{}"'.format(get_raw_classification_path(dd.path)))
+            raw_classification_f = open(get_raw_classification_path(dd.path), 'w')
 
         # -------------------------------------------
         # Iterate through the returned classifications
@@ -1175,9 +1143,11 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
         cur_span = OrderedDict()
         total_detected = 0
 
-        old_lines = list(result.doc.lines())
+        old_lines = list(dd.doc.lines())
 
-        for line, dist in zip(old_lines, result.label_dists):
+        new_tags = []
+
+        for line, dist in zip(old_lines, dists):
             assert isinstance(dist, Distribution)
 
             # Write the line number and classification probabilities to the debug file.
@@ -1188,14 +1158,8 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
                 raw_classification_f.write('\n')
                 raw_classification_f.flush()
 
-            # Set the label for the line in the working block
-            # before potentially writing it out.
-            # fl = FrekiLine(line,
-            #                tag=dist.best_class,
-            #                line=line.lineno)
-            # fl.fonts = line.fonts
-
             line.tag = dist.best_class
+            new_tags.append(line.tag)
 
             # result.doc.set_line(line.lineno, fl)
 
@@ -1215,14 +1179,14 @@ def classify_docs(filelist, classifier_path=None, overwrite=None, debug_on=False
 
         # Write out the classified file.
         if classified_dir:
-            assign_spans(result.doc)
-            classified_f.write(str(result.doc))
+            assign_spans(dd.doc, new_tags)
+            classified_f.write(str(dd.doc))
             classified_f.close()
 
         if detected_dir:
             detected_f.close()
             if total_detected == 0:
-                os.unlink(get_detected_path(result.path, detected_dir))
+                os.unlink(get_detected_path(dd.path, detected_dir))
 
         if debug_on:
             raw_classification_f.close()
@@ -1371,9 +1335,24 @@ def split_words(sent):
         yield w.replace(':','').replace('#','')
 
 
-def nfold_traintest(train_docs, test_docs, **kwargs):
-    train(kwargs, train_docs)
-    return selfeval_docs(test_docs, **kwargs)
+def nfold_traintest(doc_data, test_data, classifier_path=None, **kwargs):
+    """
+    :type doc_data: list[DocData]
+    :type test_data: list[DocData]
+    """
+    cw = LogisticRegressionWrapper()
+    training_instances = []
+
+    # When we run the overall nfold feature extraction, we include
+    # noisy labels.
+    for doc_datum in doc_data:
+        for line_datum in doc_datum.data:
+            if line_datum.label.startswith('*') and kwargs.get('skip_noisy'):
+                continue
+            training_instances.append(line_datum)
+
+    train_classifier(cw, training_instances, classifier_path=classifier_path, **kwargs)
+    return selfeval_docs(test_data, classifier_path=classifier_path, **kwargs)
 
 
 def true_val(s):
@@ -1396,8 +1375,19 @@ def train(args, fl):
             args.get('classifier_path')))
         sys.exit(2)
     cw = LogisticRegressionWrapper()
-    data = extract_feats(fl, skip_noisy=True, **args)
-    train_classifier(cw, data, **args)
+    doc_data = extract_feats(fl, **args)
+
+    training_data = []
+    for doc_datum in doc_data:
+        for line_datum in doc_datum.data:
+            if line_datum.label.startswith('*') and args.get('skip_noisy'):
+                continue
+            else:
+                line_datum.label = line_datum.label.replace('*', '')
+
+            training_data.append(line_datum)
+
+    train_classifier(cw, training_data, **args)
 
 def test(args, fl):
     LOG.log(NORM_LEVEL, "Beginning classification...")
@@ -1430,7 +1420,9 @@ def testdb(args):
                     found_files.append(os.path.join(root_dir, doc_id_m.group(0)))
 
     LOG.log(NORM_LEVEL, "Beginning classification.")
-    classify_docs(found_files, **args)
+    docdata = extract_feats(found_files, **args)
+
+    classify_docs(docdata, **args)
 
 
 
@@ -1469,20 +1461,38 @@ def nfold(args, fl):
     r_list = []
     f_list = []
 
+    partial_p = []
+    partial_r = []
+    partial_f = []
+
+    exact_p = []
+    exact_r = []
+    exact_f = []
+
     # p = Pool(4)
 
     # -------------------------------------------
     # Extract features only once, so we don't have
     # to do so at each iteration.
     # -------------------------------------------
-    extract_feats(fl, **args)
+    extracted_docs = list(extract_feats(fl, **args))
     # -------------------------------------------
 
     def nfold_callback(result):
-        iter_p, iter_r, iter_f = result
+        non_o_prf, exact_prf, partial_prf = result
+        iter_p, iter_r, iter_f = non_o_prf
+
         p_list.append(iter_p)
         r_list.append(iter_r)
         f_list.append(iter_f)
+
+        partial_p.append(partial_prf[0])
+        partial_r.append(partial_prf[1])
+        partial_f.append(partial_prf[2])
+
+        exact_p.append(exact_prf[0])
+        exact_r.append(exact_prf[1])
+        exact_f.append(exact_prf[2])
 
     for iter in range(iters):
         iter_args = {}
@@ -1491,23 +1501,31 @@ def nfold(args, fl):
         iter_args['classifier_path'] = os.path.join(dir, 'nfold_{:02}.model'.format(iter))
         iter_args['overwrite'] = False
 
-        train_docs = fl[:iter_index]
-        test_docs = fl[iter_index:]
+        train_data = extracted_docs[:iter_index]
+        test_data = extracted_docs[iter_index:]
 
-        nfold_callback(nfold_traintest(train_docs, test_docs, **iter_args))
-        # p.apply_async(nfold_traintest, args=(train_docs, test_docs), kwds=iter_args, callback=nfold_callback)
+        nfold_callback(nfold_traintest(train_data, test_data, **iter_args))
+        # p.apply_async(nfold_traintest, args=(train_data, test_data), kwds=iter_args, callback=nfold_callback)
 
         # Do stuff and reshuffle
-        fl = test_docs + train_docs
+        extracted_docs = test_data + train_data
 
     # p.close()
     # p.join()
 
     def mean_stddev(lst): return ('{:.3} (\u03c3={:.3})'.format(statistics.mean(lst), statistics.stdev(lst)))
 
-    print('P', mean_stddev(p_list))
-    print('R', mean_stddev(r_list))
-    print('F', mean_stddev(f_list))
+    print('Non-O P', mean_stddev(p_list))
+    print('Non-O R', mean_stddev(r_list))
+    print('Non-O F', mean_stddev(f_list))
+    print()
+    print('Exact-Span P', mean_stddev(exact_p))
+    print('Exact-Span R', mean_stddev(exact_r))
+    print('Exact-Span F', mean_stddev(exact_f))
+    print()
+    print('Partial-Span P', mean_stddev(partial_p))
+    print('Partial-Span R', mean_stddev(partial_r))
+    print('Partial-Span F', mean_stddev(partial_f))
 
 # =============================================================================
 # MAIN

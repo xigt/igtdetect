@@ -1032,7 +1032,7 @@ class LabelEvaluator(object):
 # Testing (Apply Classifier to new Documents)
 # =============================================================================
 
-def get_classifications(docdata_list, cw):
+def get_classifications(docdata_list, cw, **kwargs):
     """
     Given a list of files, return an iterator for the classifications.
 

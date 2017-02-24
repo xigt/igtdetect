@@ -129,6 +129,8 @@ has_year = 1
 [thresholds]
 high_oov = 0.5
 med_oov = 0.2
+med_overlap = 0.25
+high_overlap = 0.5
 
 [nfold]
 nfold_ratio = 0.9

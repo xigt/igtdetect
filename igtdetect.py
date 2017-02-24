@@ -126,7 +126,7 @@ class DocData(object):
 
 
 
-def get_textfeats(line, **kwargs):
+def get_textfeats(line, word_list, **kwargs):
     """
     Given a line as input, return the text-based features
     available for that line.
@@ -143,8 +143,6 @@ def get_textfeats(line, **kwargs):
     def checkfeat_line(name, func, *args, target=line):
         if name in ENABLED_TEXT_FEATS(conf):
             feats[name] = func(target, *args)
-
-    word_list = list(split_words(line))
 
     # Quick function to add featuers for words
     # in the line.
@@ -401,9 +399,39 @@ def write_instances(fd, feat_path, **kwargs):
     data_instances = []
     lines = list(fd.lines())
 
+    prev_words = None
+
     for line in lines:
         if getbool(kwargs, 'text_feats_enabled'):
-            feat_dict[line.lineno] = get_textfeats(line, **kwargs)
+            cur_words = list(split_words(line))
+            cur_line_length = len(cur_words)
+
+            feat_dict[line.lineno] = get_textfeats(line, cur_words, **kwargs)
+
+            # Check overlap with previous line.
+            # if the number of overlapping words is above a threshold,
+            # fire this feature.
+            if kwargs.get('word_overlap') and prev_words is not None and cur_line_length > 0:
+                high_overlap = float(kwargs.get('high_overlap', 0.25))
+                med_overlap = float(kwargs.get('med_overlap', 0.1))
+
+                # Calculate the overlap
+                overlapping_words = 0
+                for cur_word in cur_words:
+                    if cur_word in prev_words:
+                        overlapping_words += 1
+
+                overlapping_ratio = overlapping_words / cur_line_length
+
+                if overlapping_ratio > high_overlap:
+                    feat_dict[line.lineno]['high_overlap'] = True
+                if overlapping_ratio > med_overlap:
+                    feat_dict[line.lineno]['med_overlap'] = True
+                if overlapping_ratio == 0:
+                    feat_dict[line.lineno]['no_overlap'] = True
+
+            prev_words = set(cur_words)
+
 
         if getbool(kwargs, 'freki_feats_enabled'):
             feat_dict[line.lineno].update(get_frekifeats(line, fi, **kwargs))

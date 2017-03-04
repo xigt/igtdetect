@@ -243,7 +243,9 @@ def get_all_line_feats(featdict, lineno, **kwargs):
 
 
 def _path_rename(path, ext):
-    return os.path.splitext(os.path.basename(path))[0] + ext
+    # result = os.path.splitext(os.path.basename(path))[0] + ext
+    result = re.search('(^.*?)\.', os.path.basename(path)).group(1) + ext
+    return result
 
 
 def get_feat_path(path, gzip=True):
@@ -258,7 +260,7 @@ def get_raw_classification_path(path):
                         _path_rename(path, '_classifications.txt'))
 
 
-classified_suffix = '_classified.txt'
+classified_suffix = '_classified.freki'
 detected_suffix = '_detected.txt'
 
 
@@ -1403,6 +1405,7 @@ def train(args, fl):
             args.get('classifier_path')))
         sys.exit(2)
     cw = LogisticRegressionWrapper()
+    cw.dump_weights(get_weight_path(args.get('classifier_path')))
     doc_data = extract_feats(fl, **args)
 
     training_data = []
@@ -1423,6 +1426,12 @@ def test(args, fl):
     LOG.log(NORM_LEVEL, "Classification complete.")
 
 def testdb(args):
+    """
+    Uses the specified database to
+
+    :param args:
+    :return:
+    """
     LOG.log(NORM_LEVEL, "Beginning classification from db...")
     db_path = args.get('db', None)
     if not os.path.exists(db_path):
@@ -1430,15 +1439,34 @@ def testdb(args):
         sys.exit(2)
 
     # Get the doc ids out of the database
-    LOG.log(NORM_LEVEL, "Obtaining list of probable linguistic documents...")
-    db = sqlite3.connect(args.get('db', None))
-    c = db.cursor()
-    results = list(c.execute("SELECT * FROM docs WHERE posprob > 0.5").fetchall())
-    doc_ids = set([str(r[0]) for r in results])
+
+    LOG.log(NORM_LEVEL, 'Obtaining list of probable linguistic documents in db "{}"'.format(db_path))
+
+    # Try to connect to the database repeatedly
+    # until specified timeout (for parallel queries)
+    timeout = 30
+    start = time.time()
+    connected = False
+    while (time.time() - start) < timeout:
+        try:
+            db = sqlite3.connect(args.get('db', None))
+            c = db.cursor()
+            results = list(c.execute("SELECT * FROM docs WHERE posprob > 0.5").fetchall())
+            doc_ids = set([str(r[0]) for r in results])
+            connected = True
+            break
+        except sqlite3.OperationalError as oe:
+            pass
+
+    if not connected:
+        sys.stderr.write("Could not connect do database.\n")
+        sys.exit(3)
+
 
     # Now, search the search path to create the list of documents.
-    LOG.log(NORM_LEVEL, "Locating relevant documents...")
     search_path = args.get('search_path')
+    LOG.log(NORM_LEVEL, 'Locating relevant documents in "{}"...'.format(search_path))
+
     found_files = []
     for root_dir, dirs, filenames in os.walk(search_path):
         for filename in filenames:
@@ -1467,6 +1495,18 @@ def testeval(args, fl):
 def traintesteval(args, fl, ep):
     train(args, fl)
     testeval(args, ep)
+
+def getinfo(args):
+    """
+    Dump out the feature weights and classes of the
+    classifier.
+    """
+    classifier_path = args.get('classifier_path')
+    cw = ClassifierWrapper.load(classifier_path)
+
+    show_weights(cw, args.get('num_feats', -1))
+    # for w in show_weights(cw, 100):
+    #     print(w)
 
 def nfold(args, fl):
     ratio = float(args.get('nfold_ratio', 0.9))
@@ -1577,6 +1617,8 @@ if __name__ == '__main__':
     common_parser.add_argument('--profile', help='Performance profile the app.', action='store_true')
     common_parser.add_argument('--feat-dir', help='Change the path to output/read features.')
     common_parser.add_argument('--gzip-feats', dest='gzip', help='Whether to gzip the features or not.', type=true_val, default=True)
+    common_parser.add_argument('--debug-dir', dest='debug_dir', help="Path for various debug files.")
+    common_parser.add_argument('--debug', type=true_val, default=0)
 
     # -------------------------------------------
     # Load the default config file, if it exists.
@@ -1617,7 +1659,7 @@ if __name__ == '__main__':
     from freki.serialize import FrekiDoc, FrekiLine, FrekiFont
     import numpy as np
     from riples_classifier.models import ClassifierWrapper, StringInstance, DataInstance, Distribution, \
-        LogisticRegressionWrapper
+        LogisticRegressionWrapper, show_weights
 
 
     # -------------------------------------------
@@ -1738,7 +1780,16 @@ if __name__ == '__main__':
     nfold_p = subparsers.add_parser('nfold', parents=[common_parser, tt_parser, train_nf_parser])
     nfold_p.add_argument('--nfold-dir', help="Directory for nfold files")
 
+    # -------------------------------------------
+    # INFO
+    # -------------------------------------------
+    info_p = subparsers.add_parser('info', parents=[common_parser])
+    info_p.add_argument('--classifier-path', help='Path to the classifier')
+    info_p.add_argument('--num-feats', help='Number of features to dump out', default=-1, type=int)
+
+
     args = main_parser.parse_args()
+
 
     # -------------------------------------------
     # Construct a common dictionary of options.
@@ -1815,9 +1866,10 @@ if __name__ == '__main__':
         val = argdict.get(arg, [])
         return globfiles(val)
 
-    train_filelist = globlist('train_files')
-    test_filelist = globlist('test_files')
-    eval_filelist = globlist('eval_files')
+
+    train_filelist = globlist('train_files') if args.subcommand in ['train', 'nfold', 'traintesteval'] else []
+    test_filelist = globlist('test_files') if args.subcommand in ['test', 'testeval'] else []
+    eval_filelist = globlist('eval_files') if args.subcommand in ['eval', 'testeval', 'traintesteval'] else []
     # -------------------------------------------
 
     # -------------------------------------------
@@ -1857,4 +1909,6 @@ if __name__ == '__main__':
         nfold(argdict, train_filelist)
     elif args.subcommand == 'testdb':
         testdb(argdict)
+    elif args.subcommand == 'info':
+        getinfo(argdict)
 

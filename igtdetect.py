@@ -279,6 +279,15 @@ def get_gold_for_classified(path):
 def get_weight_path(path):
     return os.path.join(DEBUG_DIR(args), _path_rename(path, '_weights.txt'))
 
+def basic_label(label):
+    return handle_label(label,
+                        **{STRIP_FLAGS:True,
+                           USE_MULTI_LABELS:False,
+                           USE_BI_LABELS:False})
+
+def prev_label_feat(label):
+    return 'prev_tag_{}'.format(basic_label(label))
+
 def handle_label(label, **kwargs):
     """
     Given a label, return a label without the multiple
@@ -291,12 +300,15 @@ def handle_label(label, **kwargs):
     # --1) Start by stripping the '+' elements
     #      off any label if we are not attempting
     #      to learn flags.
+    asd = False
     new_label = label
-    if getbool(kwargs, STRIP_FLAGS): new_label = new_label.split('+')[0]
+    if getbool(kwargs, STRIP_FLAGS) and '+' in new_label:
+        new_label = new_label.split('+')[0]
+
 
     # --2) Now, if we are using B/I labels for beginning/inside
     #      distinctions...
-    if not getbool(kwargs, USE_BI_LABELS) and label[0:2] in ['B-', 'I-']:
+    if not getbool(kwargs, USE_BI_LABELS) and new_label[0:2] in ['B-', 'I-']:
         new_label = new_label[2:]
 
         # 2b) if we are stripping B/I labels AND we are
@@ -439,7 +451,7 @@ def write_instances(fd, feat_path, **kwargs):
             feat_dict[line.lineno].update(get_frekifeats(line, fi, **kwargs))
 
     # 2) Now, add the prev/next line data as necessary
-    for line in lines:
+    for line_no, line in enumerate(lines):
         # Skip noisy (preceded with '*') tagged lines
         label = line.tag
         noisy = label.startswith('*')
@@ -465,6 +477,13 @@ def write_instances(fd, feat_path, **kwargs):
                 label = '*' + label
 
         all_feats = get_all_line_feats(feat_dict, line.lineno, **kwargs)
+
+        # Add the previous line's tag, if enabled.
+        if getbool(kwargs, T_PREV_TAG):
+            prev_tag = 'O'
+            if line_no > 0:
+                prev_tag = lines[line_no-1].tag
+            all_feats[prev_label_feat(prev_tag)] = True
 
         # Write out the training vector with the full label
         li = DataInstance(label, all_feats)
@@ -945,13 +964,13 @@ class SpanEvaluator(object):
         self.gold_spans += len(gold_spans)
         self.system_spans += len(eval_spans)
 
-    def exact_precision(self): return self.exact_matches / self.system_spans
-    def exact_recall(self): return self.exact_matches / self.gold_spans
+    def exact_precision(self): return self.exact_matches / self.system_spans if self.system_spans else 0
+    def exact_recall(self): return self.exact_matches / self.gold_spans if self.gold_spans else 0
     def exact_fmeasure(self): return f_measure(self.exact_precision(), self.exact_recall())
     def exact_prf(self): return self.exact_precision(),self.exact_recall(),self.exact_fmeasure()
 
-    def partial_precision(self): return self.partial_precision_matches / self.system_spans
-    def partial_recall(self): return self.partial_recall_matches / self.gold_spans
+    def partial_precision(self): return self.partial_precision_matches / self.system_spans if self.system_spans else 0
+    def partial_recall(self): return self.partial_recall_matches / self.gold_spans if self.gold_spans else 0
     def partial_fmeasure(self): return f_measure(self.partial_precision(), self.partial_recall())
     def partial_prf(self): return self.partial_precision(), self.partial_recall(), self.partial_fmeasure()
 
@@ -1076,7 +1095,12 @@ def get_classifications(docdata_list, cw, **kwargs):
             LOG.error('No features found for file "{}"'.format(dd.path))
             continue
 
-        line_classifications = cw.test(dd.data)
+        # If we are using the previous tag feature, pass the
+        # function that returns 'prev_tag_L:1' etc. to the test
+        # code.
+        prev_label_func = prev_label_feat if getbool(kwargs, T_PREV_TAG) else None
+
+        line_classifications = cw.test(dd.data, prev_label_func=prev_label_func)
 
         yield dd, line_classifications
 
@@ -1098,6 +1122,7 @@ def selfeval_docs(docdata_list, classifier_path=None, **kwargs):
 
     for result in results:
         dd, dists = result
+        dists = list(dists)
         line_data = dd.data
 
         test_labels = []
@@ -1405,7 +1430,6 @@ def train(args, fl):
             args.get('classifier_path')))
         sys.exit(2)
     cw = LogisticRegressionWrapper()
-    cw.dump_weights(get_weight_path(args.get('classifier_path')))
     doc_data = extract_feats(fl, **args)
 
     training_data = []
@@ -1422,7 +1446,8 @@ def train(args, fl):
 
 def test(args, fl):
     LOG.log(NORM_LEVEL, "Beginning classification...")
-    classify_docs(fl, **args)
+    doc_data = extract_feats(fl, testing=True, **args)
+    classify_docs(doc_data, **args)
     LOG.log(NORM_LEVEL, "Classification complete.")
 
 def testdb(args):

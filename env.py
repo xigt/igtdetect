@@ -183,6 +183,7 @@ F_HAS_LARGER_FONT  = 'has_larger_font'
 # List of all the above
 F_LIST = [F_IS_INDENTED, F_IS_FIRST_PAGE, F_PREV_LINE_SAME_BLOCK, F_NEXT_LINE_SAME_BLOCK, F_HAS_NONSTANDARD_FONT, F_HAS_SMALLER_FONT, F_HAS_LARGER_FONT]
 
+T_PREV_TAG = 'prev_tag'
 T_BASIC = 'words'
 T_HAS_LANGNAME = 'has_langname'
 T_HAS_GRAMS = 'has_grams'

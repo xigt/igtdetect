@@ -101,6 +101,7 @@ has_smaller_font = 1
 
 [text_features]
 
+prev_tag=1
 words = 1
 has_langname = 1
 has_grams = 1

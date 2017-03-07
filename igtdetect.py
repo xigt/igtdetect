@@ -1753,6 +1753,7 @@ if __name__ == '__main__':
     # -------------------------------------------
     train_nf_parser = ArgumentParser(add_help=False)
     train_nf_parser.add_argument('--use-bi-labels', type=int, default=conf.get('labels', 'use_bi_labels', fallback=1))
+    train_nf_parser.add_argument('--use-prev-tag', dest='prev_tag', type=true_val, default=conf.get('text_features', 'prev_tag'))
     train_nf_parser.add_argument('--max-features', type=int, default=conf.get('featuresets', 'max_features', fallback=-1))
     train_nf_parser.add_argument('--train-files', help='Path to the files for training the classifier.',
                                  required=requires_glob('train_files'),

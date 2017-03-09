@@ -1666,21 +1666,24 @@ if __name__ == '__main__':
         conf.read(def_path)
 
     # -------------------------------------------
-    # Add all the key, value pairs in the default
-    # config file to the main parser (without
-    # sections)
-    # -------------------------------------------
-    for sec in conf.sections():
-        common_parser.set_defaults(**conf[sec])
-
-    # -------------------------------------------
     # Append extra config file onto args.
     # -------------------------------------------
     known_args = common_parser.parse_known_args()[0]
     if known_args.config and os.path.exists(known_args.config):
         alt_c = PathRelativeConfigParser.load(known_args.config)
         for sec in alt_c.sections():
-            common_parser.set_defaults(**alt_c[sec])
+            for opt, val in alt_c[sec].items():
+                # Overwrite anything in the config file
+                # with the alternate config file.
+                conf.set(sec, opt, val)
+
+    # -------------------------------------------
+    # Make sure that all the arguments specified in
+    # either config file are set as the defaults for
+    # the arguments in the parser.
+    # -------------------------------------------
+    for sec in conf.sections():
+        common_parser.set_defaults(**conf[sec])
 
     # -------------------------------------------
     # Try to add things from the pythonpath

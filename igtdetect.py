@@ -204,6 +204,10 @@ def get_frekifeats(line, fi, **kwargs):
     checkfeat(F_HAS_SMALLER_FONT, has_smaller_font)
     checkfeat(F_HAS_LARGER_FONT, has_larger_font)
 
+    feats[F_LOW_ISCORE] = iscore(line, LOW_ISCORE_THRESH(conf), gt=False)
+    feats[F_MED_ISCORE] = iscore(line, MED_ISCORE_THRESH(conf), gt=True)
+    feats[F_HIGH_ISCORE] = iscore(line, HIGH_ISCORE_THRESH(conf), gt=True)
+
     return feats
 
 
@@ -273,7 +277,7 @@ def get_detected_path(path, detected_dir):
 
 
 def get_gold_for_classified(path):
-    return os.path.join(GOLD_DIR(args), os.path.basename(path).replace(classified_suffix, '.txt'))
+    return os.path.join(GOLD_DIR(args), os.path.basename(path).replace(classified_suffix, '.freki'))
 
 
 def get_weight_path(path):
@@ -483,6 +487,8 @@ def write_instances(fd, feat_path, **kwargs):
             if noisy:
                 label = '*' + label
 
+            line.tag = label
+
         all_feats = get_all_line_feats(feat_dict, line.lineno, **kwargs)
 
         # Add the previous line's tag, if enabled.
@@ -554,6 +560,17 @@ def has_larger_font(line, fi):
         if font.f_size > fi.def_font.f_size:
             return True
     return False
+
+# ISCORE
+def iscore(line, thresh, gt=True):
+    """
+    :type line: FrekiLine
+    """
+    line_iscore = float(line.attrs.get('iscore', 0.0))
+
+    is_greater = line_iscore >= thresh
+
+    return is_greater if gt else not is_greater
 
 def has_nondefault_font(line, fi):
     """
@@ -1315,7 +1332,7 @@ def eval_files(filelist, out_path=None, csv=False, gold_dir=None, **kwargs):
 
     out_f.close()
 
-    return label
+
 
 
 def eval_file(eval_path, gold_path, ev=None, old_se=None, outstream=sys.stdout, **kwargs):
@@ -1339,7 +1356,7 @@ def eval_file(eval_path, gold_path, ev=None, old_se=None, outstream=sys.stdout, 
         # Compare the labels across lines.
         # -------------------------------------------
         for line in eval_fd.lines():
-            eval_label = handle_label(eval_fd.get_line(line.lineno).tag, **kwargs)
+            eval_label = handle_label(eval_fd.get_line(line.lineno).tag, **kwargs).replace('TB','O').replace('V','O')
             gold_label = handle_label(gold_fd.get_line(line.lineno).tag, **kwargs)
             ev.le.add_eval_pair(gold_label, eval_label)
 
@@ -1355,8 +1372,8 @@ def eval_file(eval_path, gold_path, ev=None, old_se=None, outstream=sys.stdout, 
         # Do old-style comparison, ignoring span_id and
         # assigning span id to non-contiguous...
         # -------------------------------------------
-        assign_spans(gold_fd)
-        assign_spans(eval_fd)
+        # assign_spans(gold_fd)
+        # assign_spans(eval_fd)
 
         old_style_gold_spans = gold_fd.spans()
         old_style_eval_spans = eval_fd.spans()
@@ -1696,7 +1713,7 @@ if __name__ == '__main__':
     # -------------------------------------------
     # Import non-default modules
     # -------------------------------------------
-    from freki.serialize import FrekiDoc, FrekiLine, FrekiFont
+    from freki_model.model import FrekiDoc, FrekiLine, FrekiFont
     import numpy as np
 
     from riples_classifier.models import ClassifierWrapper, StringInstance, DataInstance, Distribution, \
@@ -1747,8 +1764,7 @@ if __name__ == '__main__':
     ev_parser.add_argument('--csv', help='Format the output as CSV.')
     ev_parser.add_argument('--eval-files', help='Files to evaluate against',
                            required=requires_glob('eval_files'),
-                           default=get_glob('eval_files'),
-                           type=globfiles)
+                           default=get_glob('eval_files'))
     ev_parser.add_argument('--gold-dir', default=conf.get('paths', 'gold_dir', fallback=None), required=requires_opt('paths', 'gold_dir'))
 
     # -------------------------------------------
@@ -1912,6 +1928,7 @@ if __name__ == '__main__':
     train_filelist = globlist('train_files') if args.subcommand in ['train', 'nfold', 'traintesteval'] else []
     test_filelist = globlist('test_files') if args.subcommand in ['test', 'testeval'] else []
     eval_filelist = globlist('eval_files') if args.subcommand in ['eval', 'testeval', 'traintesteval'] else []
+
     # -------------------------------------------
 
     # -------------------------------------------
@@ -1945,7 +1962,7 @@ if __name__ == '__main__':
     elif args.subcommand == 'eval':
         eval(argdict, eval_filelist)
     elif args.subcommand == 'testeval':
-        testeval(argdict, train_filelist)
+        testeval(argdict, eval_filelist)
     elif args.subcommand == 'traintesteval':
         traintesteval(argdict, train_filelist, eval_filelist)
     elif args.subcommand == 'nfold':

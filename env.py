@@ -1,5 +1,7 @@
 import os
+from collections import defaultdict
 from configparser import ConfigParser, _UNSET, NoSectionError, NoOptionError
+from functools import partial
 
 MY_DIR = os.path.dirname(__file__)
 def absdir(path):
@@ -81,19 +83,20 @@ MET_WORDLIST = 'met_wordlist'
 # List of language names
 LNG_NAMES = 'lng_names'
 
-_high_oov_thresh = None
-def HIGH_OOV_THRESH(config):
-    global _high_oov_thresh
-    if _high_oov_thresh is None:
-        _high_oov_thresh = config.getfloat('thresholds', 'high_oov')
-    return _high_oov_thresh
+thresh_dict = {}
+def get_thresh(config, var):
+    global thresh_dict
+    if var not in thresh_dict:
+        thresh_dict[var] = config.getfloat('thresholds', var)
+    return thresh_dict.get(var)
 
-_med_oov_thresh = None
-def MED_OOV_THRESH(config):
-    global _med_oov_thresh
-    if _med_oov_thresh is None:
-        _med_oov_thresh = config.getfloat('thresholds', 'med_oov')
-    return _med_oov_thresh
+def HIGH_OOV_THRESH(config): return get_thresh(config, 'high_oov')
+def MED_OOV_THRESH(config): return get_thresh(config, 'med_oov')
+
+def HIGH_ISCORE_THRESH(config): return get_thresh(config, 'high_iscore')
+def MED_ISCORE_THRESH(config): return get_thresh(config, 'med_iscore')
+def LOW_ISCORE_THRESH(config): return get_thresh(config, 'low_iscore')
+
 
 # -------------------------------------------
 # Load the Wordlist if it is defined in the config.
@@ -180,8 +183,12 @@ F_HAS_NONSTANDARD_FONT = 'has_nonstandard_font'
 F_HAS_SMALLER_FONT = 'has_smaller_font'
 F_HAS_LARGER_FONT  = 'has_larger_font'
 
+F_HIGH_ISCORE = 'f_high_iscore'
+F_MED_ISCORE  = 'f_med_iscore'
+F_LOW_ISCORE  = 'f_low_iscore'
+
 # List of all the above
-F_LIST = [F_IS_INDENTED, F_IS_FIRST_PAGE, F_PREV_LINE_SAME_BLOCK, F_NEXT_LINE_SAME_BLOCK, F_HAS_NONSTANDARD_FONT, F_HAS_SMALLER_FONT, F_HAS_LARGER_FONT]
+F_LIST = [F_IS_INDENTED, F_IS_FIRST_PAGE, F_PREV_LINE_SAME_BLOCK, F_NEXT_LINE_SAME_BLOCK, F_HAS_NONSTANDARD_FONT, F_HAS_SMALLER_FONT, F_HAS_LARGER_FONT, F_HIGH_ISCORE, F_MED_ISCORE, F_LOW_ISCORE]
 
 T_PREV_TAG = 'prev_tag'
 T_BASIC = 'words'
@@ -211,6 +218,7 @@ T_HAS_YEAR = 'has_year'
 
 T_LIST = [T_BASIC, T_HAS_LANGNAME, T_HAS_GRAMS, T_HAS_PARENTHETICAL, T_HAS_CITATION, T_HAS_ASTERISK, T_HAS_UNDERSCORE, T_HAS_BRACKETING,
           T_HAS_QUOTATION, T_HAS_NUMBERING, T_HAS_LEADING_WHITESPACE, T_HIGH_OOV_RATE, T_MED_OOV_RATE, T_HIGH_GLS_OOV_RATE, T_MED_GLS_OOV_RATE,
+          T_HIGH_GLS_OOV_RATE, T_MED_GLS_OOV_RATE, T_HIGH_MET_OOV_RATE,
           T_HAS_JPN, T_HAS_GRK, T_HAS_KOR, T_HAS_CYR, T_HAS_ACC, T_HAS_DIA, T_HAS_UNI, T_HAS_YEAR]
 
 # =============================================================================
@@ -226,9 +234,10 @@ T_LIST = [T_BASIC, T_HAS_LANGNAME, T_HAS_GRAMS, T_HAS_PARENTHETICAL, T_HAS_CITAT
 def enabled_feats(config: ConfigParser, section, featlist):
     enabled = set([])
     for feat in featlist:
-        b = config.getboolean(section, feat)
-        if b:
-            enabled.add(feat)
+        if config.has_option(section, feat):
+            b = config.getboolean(section, feat)
+            if b:
+                enabled.add(feat)
     return enabled
 
 _enabled_freki_feats = None

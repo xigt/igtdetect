@@ -204,9 +204,13 @@ def get_frekifeats(line, fi, **kwargs):
     checkfeat(F_HAS_SMALLER_FONT, has_smaller_font)
     checkfeat(F_HAS_LARGER_FONT, has_larger_font)
 
-    feats[F_LOW_ISCORE] = iscore(line, LOW_ISCORE_THRESH(conf), gt=False)
-    feats[F_MED_ISCORE] = iscore(line, MED_ISCORE_THRESH(conf), gt=True)
-    feats[F_HIGH_ISCORE] = iscore(line, HIGH_ISCORE_THRESH(conf), gt=True)
+    def check_iscore(feat_name, feat_thresh, gt):
+        if feat_name in ENABLED_FREKI_FEATS(conf):
+            feats[feat_name] = iscore(line, feat_thresh(conf), gt=gt)
+
+    check_iscore(F_LOW_ISCORE, LOW_ISCORE_THRESH, False)
+    check_iscore(F_MED_ISCORE, MED_ISCORE_THRESH, True)
+    check_iscore(F_HIGH_ISCORE, HIGH_ISCORE_THRESH, True)
 
     return feats
 

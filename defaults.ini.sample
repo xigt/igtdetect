@@ -99,6 +99,10 @@ has_nonstandard_font = 1
 has_larger_font = 1
 has_smaller_font = 1
 
+f_high_iscore = 1
+f_med_iscore = 1
+f_low_iscore = 1
+
 [text_features]
 
 prev_tag=1
@@ -132,6 +136,10 @@ high_oov = 0.5
 med_oov = 0.2
 med_overlap = 0.25
 high_overlap = 0.5
+
+high_iscore = 0.66
+med_iscore = 0.5
+low_iscore = 0.25
 
 [nfold]
 nfold_ratio = 0.9

@@ -2,31 +2,21 @@
 # coding=utf-8
 import logging
 import statistics
+import glob
+import sys
+import sqlite3
+import time
 from argparse import ArgumentParser, ArgumentTypeError
-from collections import OrderedDict, Iterable
+from collections import OrderedDict, Iterable, Counter
 from copy import copy
-from functools import partial
-from collections import defaultdict, Counter
-import glob, sys
 from gzip import GzipFile
 from io import TextIOBase
-from logging import StreamHandler
 from multiprocessing.pool import Pool
 from random import Random
-from tempfile import NamedTemporaryFile
-import pickle
 
 # -------------------------------------------
 # Import scikit-learn modules
 # -------------------------------------------
-from multiprocessing import Lock
-
-import time
-
-from subprocess import Popen, PIPE
-
-import sqlite3
-
 from env import *
 import re
 
@@ -1717,8 +1707,7 @@ if __name__ == '__main__':
     # -------------------------------------------
     # Import non-default modules
     # -------------------------------------------
-    from freki_model.model import FrekiDoc, FrekiLine, FrekiFont
-    import numpy as np
+    from freki.serialize import FrekiDoc, FrekiLine, FrekiFont
 
     from riples_classifier.models import ClassifierWrapper, StringInstance, DataInstance, Distribution, \
         LogisticRegressionWrapper, show_weights

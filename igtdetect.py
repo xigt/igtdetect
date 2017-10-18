@@ -1709,7 +1709,7 @@ if __name__ == '__main__':
     # -------------------------------------------
     from freki.serialize import FrekiDoc, FrekiLine, FrekiFont
 
-    from riples_classifier.models import ClassifierWrapper, StringInstance, DataInstance, Distribution, \
+    from classifier_common.models import ClassifierWrapper, StringInstance, DataInstance, Distribution, \
         LogisticRegressionWrapper, show_weights
 
 

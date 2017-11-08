@@ -11,13 +11,14 @@ from collections import OrderedDict, Iterable, Counter
 from copy import copy
 from gzip import GzipFile
 from io import TextIOBase
+import os
 from multiprocessing.pool import Pool
 from random import Random
 
 # -------------------------------------------
 # Import scikit-learn modules
 # -------------------------------------------
-from env import *
+from .env import *
 import re
 
 # -------------------------------------------
@@ -1647,7 +1648,7 @@ def nfold(args, fl):
 # MAIN
 # =============================================================================
 
-if __name__ == '__main__':
+def run():
     # -------------------------------------------
     # Set up the main argument parser (for subcommands)
     # -------------------------------------------
@@ -1672,21 +1673,34 @@ if __name__ == '__main__':
     # Load the default config file, if it exists.
     # -------------------------------------------
     conf = PathRelativeConfigParser()
-    def_path = os.path.join(os.path.dirname(__file__), './defaults.ini')
+    def_path = os.path.join(os.getcwd(), './defaults.ini')
     if os.path.exists(def_path):
         conf.read(def_path)
+
 
     # -------------------------------------------
     # Append extra config file onto args.
     # -------------------------------------------
     known_args = common_parser.parse_known_args()[0]
+
     if known_args.config and os.path.exists(known_args.config):
         alt_c = PathRelativeConfigParser.load(known_args.config)
         for sec in alt_c.sections():
+            if sec not in conf.sections():
+                conf.add_section(sec)
             for opt, val in alt_c[sec].items():
                 # Overwrite anything in the config file
                 # with the alternate config file.
                 conf.set(sec, opt, val)
+
+    # =============================================
+    # Throw an error if neither a default nor extra
+    # config file are specified.
+    # =============================================
+    if not os.path.exists(def_path) and (not known_args.config or not os.path.exists(known_args.config)):
+        LOG.critical("A config file must be specified.")
+        sys.exit(3)
+
 
     # -------------------------------------------
     # Make sure that all the arguments specified in
@@ -1709,7 +1723,7 @@ if __name__ == '__main__':
     # -------------------------------------------
     from freki.serialize import FrekiDoc, FrekiLine, FrekiFont
 
-    from classifier_common.models import ClassifierWrapper, StringInstance, DataInstance, Distribution, \
+    from riples_classifier.models import ClassifierWrapper, StringInstance, DataInstance, Distribution, \
         LogisticRegressionWrapper, show_weights
 
 
@@ -1965,3 +1979,5 @@ if __name__ == '__main__':
     elif args.subcommand == 'info':
         getinfo(argdict)
 
+if __name__ == '__main__':
+    run()

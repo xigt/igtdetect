@@ -9,23 +9,42 @@ The input for training can be produced by:
 	*  [PDFMiner](https://pypi.python.org/pypi/pdfminer/) (Free) 
 *  Reanalyzing the output using our [Freki](https://github.com/xigt/freki) package.
 
-## 0. Dependencies and Setup
+## 1. Installation
 
+### Easy Installation
 
-### Dependencies
+The easiest installation for most users can be accomplished using [pip](https://pypi.python.org/pypi/pip):
+
+    pip3 install . --process-dependency-links
+
+This will automatically retrieve the dependencies required for installation, and install an **`detect-igt`** script in your path.
+
+### Manual Installation
+
+This module has the following dependencies:
 
 * Python Modules:
 	* [scikit-learn](http://scikit-learn.org/)
 	* [freki](https://github.com/xigt/freki)
 	* [numpy](http://www.numpy.org/)
 
+Install these modules into your path, and 	
+
 *N.B.: If for some reason you are unable to install modules into your python installation, you can use the `pythonpath` setting in the config files to add folders that contain the appropriate modules*
+
+## 2. Running
 
 ### Setup
 
 1. Copy the included `defaults.ini.sample` file as `defaults.ini`
 2. Most settings will be fine at their default values, but users may want to adjust settings in the `[paths]` section.
 3. More detailed descriptions can be found at the end of the readme.
+
+### Command
+
+Using the **`detect-igt`** script that gets installed, the classifier can be run with:
+
+    detect-igt
 
 ### Using Config Files
 
@@ -34,7 +53,7 @@ The `defaults.ini` is used to set the defaults for the system, but any value may
 Any value not specified in the config file will use the default value supplied in `defaults.ini`.
 
 
-## 1. Training
+## 3. Training
 
 ### Usage
 
@@ -80,7 +99,7 @@ Then the same process could be run using the command:
 
     ./igtdetect.py train -c "my_config.ini"
     
-## 2. Testing
+## 4. Testing
 
 ### Usage
 
@@ -131,7 +150,7 @@ Then the following command could be used to perform the same thing:
 
     ./igtdetect.py test -c myconfig.ini
     
-## 3. Evaluation
+## 5. Evaluation
 
 The evaluation mode requires a set of gold standard `freki` files placed in a directory. These gold files should have the same base name as the output (`*_classified.txt`) files to be evaluated, without the `_classified` suffix.
 

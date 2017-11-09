@@ -36,6 +36,11 @@ class PathRelativeConfigParser(ConfigParser):
         prcp.read(filename)
         return prcp
 
+    def get(self, section, option, *, raw=False, vars=None, fallback=_UNSET):
+        if section not in self.sections():
+            return fallback
+        else:
+            return super().get(section, option, raw=raw, vars=vars, fallback=fallback)
 
 
 # -------------------------------------------

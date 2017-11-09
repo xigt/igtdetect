@@ -27,11 +27,12 @@ import re
 LOG = logging.getLogger()
 NORM_LEVEL = 40
 logging.addLevelName(NORM_LEVEL, 'NORM')
-stdout_handler = logging.StreamHandler(sys.stdout)
-stdout_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
-stdout_handler.setLevel(NORM_LEVEL)
+stderr_handler = logging.StreamHandler(sys.stderr)
+stderr_handler.setFormatter(logging.Formatter('%(levelname)s: %(message)s'))
+stderr_handler.setLevel(NORM_LEVEL)
 
-LOG.addHandler(stdout_handler)
+LOG.addHandler(stderr_handler)
+
 
 
 # -------------------------------------------
@@ -1673,7 +1674,7 @@ def run():
     # Load the default config file, if it exists.
     # -------------------------------------------
     conf = PathRelativeConfigParser()
-    def_path = os.path.join(os.getcwd(), './defaults.ini')
+    def_path = os.environ.get('IGTDETECT_CONFIG', os.path.join(os.path.dirname(__file__), 'defaults.ini'))
     if os.path.exists(def_path):
         conf.read(def_path)
 
@@ -1682,6 +1683,7 @@ def run():
     # Append extra config file onto args.
     # -------------------------------------------
     known_args = common_parser.parse_known_args()[0]
+
 
     if known_args.config and os.path.exists(known_args.config):
         alt_c = PathRelativeConfigParser.load(known_args.config)
@@ -1692,15 +1694,6 @@ def run():
                 # Overwrite anything in the config file
                 # with the alternate config file.
                 conf.set(sec, opt, val)
-
-    # =============================================
-    # Throw an error if neither a default nor extra
-    # config file are specified.
-    # =============================================
-    if not os.path.exists(def_path) and (not known_args.config or not os.path.exists(known_args.config)):
-        LOG.critical("A config file must be specified.")
-        sys.exit(3)
-
 
     # -------------------------------------------
     # Make sure that all the arguments specified in
@@ -1852,8 +1845,19 @@ def run():
     info_p.add_argument('--classifier-path', help='Path to the classifier')
     info_p.add_argument('--num-feats', help='Number of features to dump out', default=-1, type=int)
 
+    # -------------------------------------------
+    # Check for Config
+    # -------------------------------------------
+    common_args = common_parser.parse_known_args()[0]
+    if not os.path.exists(def_path) and not (common_args.config and os.path.exists(common_args.config)):
+        sys.stderr.write("A config file should be specified with --config or the IGTDETECT_CONFIG environment variable.\n")
+        sys.stderr.flush()
+        main_parser.print_help()
+        sys.exit(3)
+
 
     args = main_parser.parse_args()
+
 
 
     # -------------------------------------------
@@ -1931,10 +1935,25 @@ def run():
         val = argdict.get(arg, [])
         return globfiles(val)
 
+    errors = False
+    try:
+        train_filelist = globlist('train_files') if args.subcommand in ['train', 'nfold', 'traintesteval'] else []
+    except ArgumentTypeError as ate:
+        LOG.error('Error finding training files: {}'.format(ate))
+        errors = True
+    try:
+        test_filelist = globlist('test_files') if args.subcommand in ['test', 'testeval'] else []
+    except ArgumentTypeError as ate:
+        LOG.error('Error finding testing files: {}'.format(ate))
+        errors = True
+    try:
+        eval_filelist = globlist('eval_files') if args.subcommand in ['eval', 'testeval', 'traintesteval'] else []
+    except ArgumentTypeError as ate:
+        LOG.error('Error finding evaluation files: {}'.format(ate))
+        errors = True
 
-    train_filelist = globlist('train_files') if args.subcommand in ['train', 'nfold', 'traintesteval'] else []
-    test_filelist = globlist('test_files') if args.subcommand in ['test', 'testeval'] else []
-    eval_filelist = globlist('eval_files') if args.subcommand in ['eval', 'testeval', 'traintesteval'] else []
+    if errors:
+        sys.exit(3)
 
     # -------------------------------------------
 

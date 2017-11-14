@@ -34,6 +34,21 @@ stderr_handler.setLevel(NORM_LEVEL)
 LOG.addHandler(stderr_handler)
 
 
+# -------------------------------------------
+# Load the default config file, if it exists.
+# -------------------------------------------
+conf = PathRelativeConfigParser()
+def_path = os.environ.get('IGTDETECT_CONFIG', os.path.join(os.getcwd(), 'defaults.ini'))
+if os.path.exists(def_path):
+    conf.read(def_path)
+
+# -------------------------------------------
+# Try to add things from the pythonpath
+# -------------------------------------------
+pythonpath = conf.get('runtime', 'pythonpath', fallback=None)
+if pythonpath:
+    for subpath in pythonpath.split(':'):
+        sys.path.append(subpath)
 
 # -------------------------------------------
 # CONSTANTS
@@ -1669,15 +1684,6 @@ def run():
     common_parser.add_argument('--gzip-feats', dest='gzip', help='Whether to gzip the features or not.', type=true_val, default=True)
     common_parser.add_argument('--debug-dir', dest='debug_dir', help="Path for various debug files.")
     common_parser.add_argument('--debug', type=true_val, default=0)
-
-    # -------------------------------------------
-    # Load the default config file, if it exists.
-    # -------------------------------------------
-    conf = PathRelativeConfigParser()
-    def_path = os.environ.get('IGTDETECT_CONFIG', os.path.join(os.path.dirname(__file__), 'defaults.ini'))
-    if os.path.exists(def_path):
-        conf.read(def_path)
-
 
     # -------------------------------------------
     # Append extra config file onto args.

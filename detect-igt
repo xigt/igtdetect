@@ -1,3 +1,4 @@
 #!/usr/bin/env python3
-from igtdetect.igtdetect import run
-run()
+from igtdetect.igtdetect import pre_run, run
+main_parser, common_parser = pre_run()
+run(main_parser, common_parser)

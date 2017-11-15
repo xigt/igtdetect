@@ -1664,7 +1664,7 @@ def nfold(args, fl):
 # MAIN
 # =============================================================================
 
-def run():
+def pre_run():
     # -------------------------------------------
     # Set up the main argument parser (for subcommands)
     # -------------------------------------------
@@ -1681,7 +1681,8 @@ def run():
                                help='Overwrite previously generated feature files.')
     common_parser.add_argument('--profile', help='Performance profile the app.', action='store_true')
     common_parser.add_argument('--feat-dir', help='Change the path to output/read features.')
-    common_parser.add_argument('--gzip-feats', dest='gzip', help='Whether to gzip the features or not.', type=true_val, default=True)
+    common_parser.add_argument('--gzip-feats', dest='gzip', help='Whether to gzip the features or not.', type=true_val,
+                               default=True)
     common_parser.add_argument('--debug-dir', dest='debug_dir', help="Path for various debug files.")
     common_parser.add_argument('--debug', type=true_val, default=0)
 
@@ -1689,7 +1690,6 @@ def run():
     # Append extra config file onto args.
     # -------------------------------------------
     known_args = common_parser.parse_known_args()[0]
-
 
     if known_args.config and os.path.exists(known_args.config):
         alt_c = PathRelativeConfigParser.load(known_args.config)
@@ -1717,13 +1717,18 @@ def run():
         for subpath in pythonpath.split(':'):
             sys.path.append(subpath)
 
-    # -------------------------------------------
-    # Import non-default modules
-    # -------------------------------------------
-    from freki.serialize import FrekiDoc, FrekiLine, FrekiFont
+    return main_parser, common_parser
 
-    from riples_classifier.models import ClassifierWrapper, StringInstance, DataInstance, Distribution, \
-        LogisticRegressionWrapper, show_weights
+# -------------------------------------------
+# Import non-default modules
+# -------------------------------------------
+from freki.serialize import FrekiDoc, FrekiLine, FrekiFont
+
+from riples_classifier.models import ClassifierWrapper, StringInstance, DataInstance, Distribution, \
+    LogisticRegressionWrapper, show_weights
+
+
+def run(main_parser, common_parser):
 
 
     # -------------------------------------------
@@ -2005,4 +2010,5 @@ def run():
         getinfo(argdict)
 
 if __name__ == '__main__':
-    run()
+    main_parser, common_parser = pre_run()
+    run(main_parser, common_parser)

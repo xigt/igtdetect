@@ -385,19 +385,22 @@ def load_feats(path, **kwargs):
         feat_f = GzipFile(path, 'r')
     else:
         feat_f = open(path, 'rb')
+    try:
+        for line in feat_f:
+            line_str = line.decode(encoding='utf-8')
+            line_feats = {}
+            data = line_str.split()
+            label = data[0]
 
-    for line in feat_f:
-        line_str = line.decode(encoding='utf-8')
-        line_feats = {}
-        data = line_str.split()
-        label = data[0]
-
-        for feat, value in [pair.split(':') for pair in data[1:]]:
-            line_feats[feat] = bool(value)
+            for feat, value in [pair.split(':') for pair in data[1:]]:
+                line_feats[feat] = bool(value)
 
 
-        di = DataInstance(handle_label(label, **kwargs), line_feats)
-        data_instances.append(di)
+            di = DataInstance(handle_label(label, **kwargs), line_feats)
+            data_instances.append(di)
+    except OSError:
+        print('corrupt file')
+        print(path)
 
     feat_f.close()
     return data_instances

@@ -10,7 +10,7 @@ setup(name='igtdetect',
       scripts=['detect-igt'],
       packages=['igtdetect'],
       install_requires = [
-          'scikit-learn >= 0.18',
+          'scikit-learn == 0.18.1',
           'numpy',
           'freki',
           'riples-classifier',

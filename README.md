@@ -11,6 +11,11 @@ The input for training can be produced by:
 
 ## 1. Installation
 
+If you only want the source code, you can simply clone the repository or download the latest source code
+zip file from the releases page. If you want a pre-trained model, you can download the latest `model_only.zip`
+or `code_and_model.zip` files from the [releases page](https://github.com/xigt/igtdetect/releases/) and unzip
+the file.
+
 ### Easy Installation
 
 The easiest installation for most users can be accomplished using [pip](https://pypi.python.org/pypi/pip):

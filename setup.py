@@ -2,7 +2,7 @@
 from setuptools import setup
 
 setup(name='igtdetect',
-      version='1.1.0',
+      version='1.1.1',
       description='Line-level classifier for IGT instances, part of RiPLEs pipeline.',
       author='Ryan Georgi',
       author_email='rgeorgi@uw.edu',
@@ -10,14 +10,12 @@ setup(name='igtdetect',
       scripts=['detect-igt'],
       packages=['igtdetect'],
       install_requires = [
-          'scikit-learn == 0.18.1',
+	      'wheel',
+	      'setuptools>=53',
+          'scikit-learn>=0.18.1',
           'numpy',
-          'freki',
-          'riples-classifier',
-      ],
-      dependency_links = [
-          'https://github.com/xigt/freki/tarball/master#egg=freki-0.1.0',
-          'https://github.com/xigt/riples-classifier/tarball/master#egg=riples-classifier-0.1.0',
-      ],
+          'freki@https://github.com/xigt/freki/archive/v0.3.0.tar.gz',
+          'riples-classifier@https://github.com/xigt/riples-classifier/archive/0.1.0.tar.gz',
+      ]
 
       )

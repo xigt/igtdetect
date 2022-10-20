@@ -7,7 +7,7 @@ import sys
 import sqlite3
 import time
 from argparse import ArgumentParser, ArgumentTypeError
-from collections import OrderedDict, Iterable, Counter
+from collections import OrderedDict, Counter
 from copy import copy
 from gzip import GzipFile
 from io import TextIOBase

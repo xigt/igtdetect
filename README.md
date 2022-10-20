@@ -1,3 +1,7 @@
+# Updates by DH Lab
+
+Including sample.model from igtdetect v0.1.0 release on Github
+
 # `igt-detect`
 
 This package is used to train and run a classifier to identify IGT instances in PDF-extracted text.
@@ -6,7 +10,7 @@ The input for training can be produced by:
 
 * Using one of the two packages to extract text from PDF:
 	*  [PDFLib TET](https://www.pdflib.com/products/tet/) (Commercial)
-	*  [PDFMiner](https://pypi.python.org/pypi/pdfminer/) (Free) 
+	*  [PDFMiner](https://pypi.python.org/pypi/pdfminer/) (Free)
 *  Reanalyzing the output using our [Freki](https://github.com/xigt/freki) package.
 
 ## 1. Installation
@@ -33,7 +37,7 @@ This module has the following dependencies:
 	* [freki](https://github.com/xigt/freki)
 	* [numpy](http://www.numpy.org/)
 
-Install these modules into your path, and 	
+Install these modules into your path, and
 
 *N.B.: If for some reason you are unable to install modules into your python installation, you can use the `pythonpath` setting in the config files to add folders that contain the appropriate modules*
 
@@ -63,13 +67,13 @@ Any value not specified in the config file will use the default value supplied i
 ### Usage
 
 The training mode has the following usage:
-	
+
 	usage: igtdetect.py train [-h] [-v] [-c CONFIG] [-f]
 	                          [--classifier-path CLASSIFIER_PATH]
 	                          [--use-bi-labels USE_BI_LABELS]
 	                          [--max-features MAX_FEATURES]
 	                          [--train-files TRAIN_FILES] [--overwrite-model]
-	
+
 	optional arguments:
 	  -h, --help                         show this help message and exit
 	  -v, --verbose                      Enable verbosity.
@@ -80,8 +84,8 @@ The training mode has the following usage:
 	  --max-features MAX_FEATURES
 	  --train-files TRAIN_FILES          Path to the files for training the classifier.
 	  --overwrite-model                  Overwrite previously created models
-	                     	                     
-	                          
+
+
 #### Output:
 * If `debug_on` is set to `1` or `true`:
 	* A file will be created inside a folder in the `debug` folder with the breakdown of feature weights converged upon for the classifier
@@ -93,17 +97,17 @@ The training mode has the following usage:
 To train a classifier using all of the files in the directory `train` and save to the output file `sample_classifier.model`.
 
     ./igtdetect.py train --train-files "train/*.txt" --classifier-path "sample_classifier.model"
-    
+
 Alternatively, if the config file `my_config.ini` contains the lines:
 
 	[paths]
     train_files = train/*.txt
     classifier_path = sample_classifier.model
-    
+
 Then the same process could be run using the command:
 
     ./igtdetect.py train -c "my_config.ini"
-    
+
 ## 4. Testing
 
 ### Usage
@@ -114,7 +118,7 @@ The testing mode has the following usage:
 	                         [--classifier-path CLASSIFIER_PATH]
 	                         [--test-files TEST_FILES]
 	                         [--classified-dir CLASSIFIED_DIR]
-	
+
 	optional arguments:
 	  -h, --help                          show this help message and exit
 	  -v, --verbose                       Enable verbosity.
@@ -143,18 +147,18 @@ To test the saved classifier `sample_classifier.model` on all documents within t
     ./igtdetect.py test --classifier-path "sample_classifier.model" \
                         --test-files "./test/*.txt" \
                         --classified-dir "./classified"
-                        
+
 Alternatively, if the config file `myconfig.ini` contains the lines:
 
     [paths]
     classifier_path = sample_classifier.model
     test_files = ./test/*.txt
     classified_dir = ./classified
-    
+
 Then the following command could be used to perform the same thing:
 
     ./igtdetect.py test -c myconfig.ini
-    
+
 ## 5. Evaluation
 
 The evaluation mode requires a set of gold standard `freki` files placed in a directory. These gold files should have the same base name as the output (`*_classified.txt`) files to be evaluated, without the `_classified` suffix.
@@ -165,7 +169,7 @@ The evaluation mode has the following usage:
 
 	usage: igtdetect.py eval [-h] [-v] [-c CONFIG] [-f] [-o OUT_PATH] [--csv CSV]
 	                         [--eval-files EVAL_FILES] [--gold-dir GOLD_DIR]
-	
+
 	optional arguments:
 	  -h, --help                        show this help message and exit
 	  -v, --verbose                     Enable verbosity.
@@ -189,15 +193,15 @@ The output of the evaluation mode looks like the following:
 	T	   4	   5	   6	 202	   0	0.93
 	M	   4	   0	   0	   0	  18	0.82
 		0.99	0.87	0.91	0.96	0.50
-	
+
 	----- Labels -----
 	 Classifiation Acc: 0.96
 	       Non-O P/R/F: 0.96	0.89	0.92
-	
+
 	----- Spans ------
 	  Exact-span P/R/F: 0.22	0.11	0.14
 	Partial-span P/R/F: 0.92	0.91	0.92
-	
+
 	--- Auto-Spans ---
 	  Exact-span P/R/F: 0.61	0.63	0.62
 	Partial-span P/R/F: 0.97	0.92	0.95
@@ -212,7 +216,7 @@ The **Labels** section gives overall accuracy, as well as precision, recall, and
 #### Spans
 The **Spans** section gives P/R/F scores for entire spans of IGT, as defined by unique "span-id" attributes for the lines in the document.
 
-* **Exact-spans** are calculated as spans for which the system gets the line boundaries for the IGT exactly the same as the gold standard. 
+* **Exact-spans** are calculated as spans for which the system gets the line boundaries for the IGT exactly the same as the gold standard.
 * **Partial-spans** are calculated by how many spans the system generates that overlap with a gold span in some way.
 
 #### Auto-Spans
@@ -224,18 +228,18 @@ The **"Auto-Spans"** measurements are calculated the same as the **Spans** measu
 To evaluate a set of classified files in the directory `classified` against any gold files in the `gold` directory that match the name of the classified files, minus the `*_classified` suffix, the following commandline could be used:
 
     ./igtdetect.py eval --eval-files "./classified/*.txt"  --gold-dir "./gold"
-    
+
 Alternatively, if the config file `myconfig.ini` contains the lines:
 
     [paths]
     gold_dir = ./gold
     eval_files = ./classified/*.txt
-    
+
 Then the following commandline would also achieve the same result:
 
     ./igtdetect.py eval -c myconfig.ini
-    
-    
+
+
 # Features
 
 There are two sets of features used by the classifier; those that have some position and font information, as provided by PDFLib TET's extraction process and reanalyzed by the freki package, and those that are available purely from the unicode text strings on each line.
@@ -315,7 +319,7 @@ The following sections provide a list of each of these features, and a brief des
 * `freki_feats_enabled`
 	* If set to `1`, use the `freki`-based features.
 * `text_feats_enabled`
-	* If set to `1`, use the textual features. 
+	* If set to `1`, use the textual features.
 * `use_prev_line`
 	* If the current line is *n*, in addition to using every enabled feature on the line *n*, also calculate the features for line *n-1* as features on line *n*.
 * `use_prev_prev_line`

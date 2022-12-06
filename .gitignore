@@ -4,3 +4,4 @@
 defaults.ini
 .idea
 __pycache__
+.python-version

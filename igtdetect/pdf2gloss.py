@@ -88,10 +88,10 @@ def detect_igts(input_path, temp_path, model_path, config_path):
 Runs a harvesting script on top of the igt-detect analysis
 '''
 def harvest_glosses(input_path):
-
+    IGT_list = []
     for freki_file in os.listdir(input_path):
         path_to_freki_feature_file = os.path.join(input_path, freki_file)
-        IGT_list = glossharvester.harvest_IGTs(path_to_freki_feature_file)
+        IGT_list += glossharvester.harvest_IGTs(path_to_freki_feature_file)
         logging.info("Harvested glosses from {}, total of {} IGTs.".format(freki_file, len(IGT_list)))
 
     return IGT_list

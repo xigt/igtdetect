@@ -11,7 +11,7 @@ derives features from those txt files,
 analyzes the feature file using igt-detect,
 and finally analyzes the output from igt-detect with our own gloss-harvest script
 '''
-def main(input_path, output_path, model_path, config_path):
+def main(input_path, output_path, model_path='../sample/new-model.pkl.gz', config_path='../defaults.ini.sample'):
     logging.basicConfig(filename='pdf2gloss.log', encoding='utf8', level=logging.INFO)
     logging.info('Started analysis.')
 

@@ -21,7 +21,7 @@ class IGT():
         self.classification_methods = classification_methods
 
     def __str__(self):
-        return f"L: {self.line}\nG: {self.gloss}\nT: {self.translation}\nClassification methods: {self.classification_methods}\n"
+        return f"Source: {self.source}\nL: {self.line}\nG: {self.gloss}\nT: {self.translation}\nClassification methods: {self.classification_methods}\n"
 
 def harvest_IGTs(classified_freki_filepath: str, iscore_cutoff: float = 0.6):
     IGTs = []
@@ -67,7 +67,7 @@ def harvest_IGTs(classified_freki_filepath: str, iscore_cutoff: float = 0.6):
 
                     continue
 
-                #if there are no IGT candidates, create a new IGT
+                # if there are no IGT candidates, create a new IGT
                 else:
                     igt = IGT(gloss=utterance, source=source) if linetag == 'G' else IGT(translation=utterance, source=source)
                     igt.line = get_utterance(classified_freki[i-1]) if linetag == 'G' else get_utterance(classified_freki[i-2])
@@ -88,18 +88,12 @@ def harvest_IGTs(classified_freki_filepath: str, iscore_cutoff: float = 0.6):
                     saved_linenrs.append(linenr)
                     continue
 
-            
+        # save the doc_id as the source
+        # can later maybe be expanded with page number as well (information available on the same row)
         elif row.startswith('doc_id'):
-            source = row.split('doc_id=')[1] + ' page: ' + row.split('page=')[1].split()[0]
+            source = row.split('doc_id=')[1].split(' ')[0]
         else:
             pass
 
 
     return IGTs
-
-# # Test
-# IGT_list = harvest_IGTs("/Users/Stiph002/Projects/excalibur/gloss-harvester/4. IGT TXTs/Belien2014-features_classified.freki")
-# for igt in IGT_list:
-#     print(igt)
-    
-# print('huzzah: {} IGTs harvested'.format(len(IGT_list)))

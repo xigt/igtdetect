@@ -21,8 +21,8 @@ for txt_scan in os.listdir(path_to_txt_scans_dir):
 
 ### detect IGTs with Freki
 model_path = "/Users/Stiph002/Projects/igtdetect/sample/new-model.pkl.gz"
-path_to_freki_features_dir = "/Users/Stiph002/Projects/igtdetect/igtdetect/data/4_freki_features"
 config_path = "/Users/Stiph002/Projects/igtdetect/defaults.ini.sample"
+path_to_freki_features_dir = "/Users/Stiph002/Projects/igtdetect/igtdetect/data/4_freki_features"
 subprocess.run(['python', 'detect-igt', 'test', '--config', config_path, '--classifier-path', model_path, '--test-files', path_to_txt_features_dir, '--classified-dir', path_to_freki_features_dir])
 
 
@@ -35,5 +35,5 @@ for freki_file in os.listdir(path_to_freki_features_dir):
     if len(IGT_list) > 0:
         print('yay')
 
-# for item in IGT_list:
-#     print(item)
+for item in IGT_list:
+    print(item)

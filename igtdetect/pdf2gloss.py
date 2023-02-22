@@ -4,6 +4,13 @@ import subprocess
 import glossharvester
 import logging
 
+'''
+Looks in the input_path directory for PDFs, 
+scans them into txt files,
+derives features from those txt files, 
+analyzes the feature file using igt-detect,
+and finally analyzes the output from igt-detect with our own gloss-harvest script
+'''
 def main(input_path, output_path, model_path, config_path):
     logging.basicConfig(filename='pdf2gloss.log', encoding='utf8', level=logging.INFO)
     logging.info('Started analysis.')
@@ -20,6 +27,9 @@ def main(input_path, output_path, model_path, config_path):
 
     save_glosses_as_txt(IGT_list, output_path)
 
+'''
+Sets up the temporary environment to save the different output files that are generated
+'''
 def setup_temp_dir(output_path):
     temp_path = os.path.join(output_path, 'temp')
     if not os.path.exists(temp_path):

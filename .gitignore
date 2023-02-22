@@ -5,3 +5,8 @@ defaults.ini
 .idea
 __pycache__
 .python-version
+gloss-harvester
+output
+sample
+data
+pdf2gloss.log

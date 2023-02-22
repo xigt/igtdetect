@@ -19,7 +19,7 @@ def main(input_path, output_path, model_path, config_path):
 
     scanned_texts = scan_pdfs(input_path, temp_path)
 
-    features = get_features_from_dir(scanned_texts, temp_path)
+    features = get_features_from_txts(scanned_texts, temp_path)
     
     detected_igts = detect_igts(features, temp_path, model_path, config_path)
 
@@ -69,7 +69,7 @@ def scan_pdfs(input_path, temp_path):
 Iterates over txt files in a directory in order to derive the features from them.
 Returns a path to a directory with freki files.
 '''
-def get_features_from_dir(input_path, temp_path):
+def get_features_from_txts(input_path, temp_path):
     features_path = os.path.join(temp_path, 'features')
     for filename in os.listdir(input_path):
         if filename.endswith('.txt'):
